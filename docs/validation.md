@@ -11,8 +11,9 @@ NDK 28.2.13676358:
 | Go tests with `with_gvisor`, race detector, and `go vet` | Passed |
 | Protected TCP/UDP/listener sockets and descriptor ownership | Passed with synthetic callbacks and loopback sockets |
 | JNI callback exceptions, thread attachment, reference/FD ownership | Passed with the actual C bridge and a fake VM under ASan/UBSan |
-| Android consent, CIDR routes, redaction, service cancellation/revoke/health | Passed; 18 JVM tests, including API 23 lifecycle coverage |
-| Flutter analysis and 25 Dart tests | Passed |
+| Android consent, canonical CIDR routes, redaction, service cancellation/revoke/health | Passed; 36 JVM tests, including binding cancellation, foreground ordering, loopback routing, and API 23 lifecycle coverage |
+| Flutter analysis and 36 Dart tests | Passed, including constructor parity and fail-fast Android toolchain preflight |
+| ELF/ZIP checker regression tests | Passed; 11 tests covering bounded reads, alignment, truncation, and CRC corruption |
 | Swift SDK build and 54 lifecycle/storage/network-settings tests | Passed |
 | iOS setup regression tests and canonical native sources | Passed; 11 setup tests |
 | Custom-transport Android core, arm64-v8a, x86_64, and optional armeabi-v7a | Built; ELF `LOAD` segments aligned to 16 KiB |

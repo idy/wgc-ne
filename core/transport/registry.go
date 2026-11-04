@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"regexp"
+	"runtime"
+	"strconv"
 	"sync"
 
 	wgc "github.com/idy/wgc"
@@ -28,8 +31,9 @@ type Factory func(context.Context, json.RawMessage) (wgc.Transport, error)
 type Wrapper func(context.Context, wgc.Transport, json.RawMessage) (wgc.Transport, error)
 
 type entry struct {
-	factory Factory
-	wrapper Wrapper
+	factory  Factory
+	wrapper  Wrapper
+	validate func(json.RawMessage, bool) error
 }
 type Registry struct {
 	mu      sync.RWMutex
@@ -40,7 +44,15 @@ var validName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 var Default = NewRegistry()
 
 func NewRegistry() *Registry {
-	return &Registry{entries: map[string]entry{"udp": {factory: openUDP}}}
+	return &Registry{entries: map[string]entry{
+		"udp": {
+			factory: openUDP,
+			validate: func(raw json.RawMessage, numericOnly bool) error {
+				_, err := parseUDPListen(raw, numericOnly)
+				return err
+			},
+		},
+	}}
 }
 
 func (r *Registry) register(name string, value entry) error {
@@ -72,8 +84,18 @@ func RegisterWrapper(name string, wrapper Wrapper) error {
 	return Default.RegisterWrapper(name, wrapper)
 }
 
-func (r *Registry) Validate(spec Spec) error { return r.validate(spec, 0) }
-func (r *Registry) validate(spec Spec, depth int) error {
+func (r *Registry) Validate(spec Spec) error {
+	return r.ValidateContext(context.Background(), spec)
+}
+
+// ValidateContext checks registrations and built-in UDP options without opening
+// sockets or resolving names. Android and protected contexts require numeric UDP
+// listen hosts, since Go otherwise resolves them before the socket control runs.
+func (r *Registry) ValidateContext(ctx context.Context, spec Spec) error {
+	return r.validate(spec, 0, runtime.GOOS == "android" || HasSocketProtector(ctx))
+}
+
+func (r *Registry) validate(spec Spec, depth int, numericOnly bool) error {
 	if depth > 8 {
 		return errors.New("transport nesting exceeds eight wrappers")
 	}
@@ -94,10 +116,13 @@ func (r *Registry) validate(spec Spec, depth int) error {
 		if spec.Base != nil {
 			base = *spec.Base
 		}
-		return r.validate(base, depth+1)
+		return r.validate(base, depth+1, numericOnly)
 	}
 	if spec.Base != nil {
 		return errors.New("base is only valid for a transport wrapper")
+	}
+	if value.validate != nil {
+		return value.validate(spec.Options, numericOnly)
 	}
 	return nil
 }
@@ -105,7 +130,7 @@ func (r *Registry) validate(spec Spec, depth int) error {
 // Open closes a wrapper's base if construction fails. On success the returned
 // transport owns its base, and must close it when Close is called.
 func (r *Registry) Open(ctx context.Context, spec Spec) (wgc.Transport, error) {
-	if err := r.Validate(spec); err != nil {
+	if err := r.ValidateContext(ctx, spec); err != nil {
 		return nil, err
 	}
 	return r.open(ctx, spec)
@@ -156,18 +181,45 @@ func (r *Registry) open(ctx context.Context, spec Spec) (wgc.Transport, error) {
 	return result, nil
 }
 
-func openUDP(ctx context.Context, raw json.RawMessage) (wgc.Transport, error) {
+func parseUDPListen(raw json.RawMessage, numericOnly bool) (string, error) {
+	if len(raw) == 0 {
+		raw = json.RawMessage(`{}`)
+	}
 	var options struct {
-		Listen string `json:"listen,omitempty"`
+		Listen json.RawMessage `json:"listen,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&options) != nil || decoder.Decode(new(any)) != io.EOF {
-		return nil, errors.New("invalid UDP options")
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || trimmed[0] != '{' || decoder.Decode(&options) != nil || decoder.Decode(new(any)) != io.EOF {
+		return "", errors.New("invalid UDP options")
 	}
-	address := options.Listen
+	var address string
+	if len(options.Listen) != 0 && (bytes.Equal(bytes.TrimSpace(options.Listen), []byte("null")) || json.Unmarshal(options.Listen, &address) != nil) {
+		return "", errors.New("invalid UDP options")
+	}
 	if address == "" {
 		address = ":0"
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", errors.New("invalid UDP listen address")
+	}
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+		return "", errors.New("invalid UDP listen port")
+	}
+	if numericOnly && host != "" {
+		if _, err := netip.ParseAddr(host); err != nil {
+			return "", errors.New("UDP listen host must be numeric when socket protection is required")
+		}
+	}
+	return address, nil
+}
+
+func openUDP(ctx context.Context, raw json.RawMessage) (wgc.Transport, error) {
+	address, err := parseUDPListen(raw, runtime.GOOS == "android" || HasSocketProtector(ctx))
+	if err != nil {
+		return nil, err
 	}
 	listener := net.ListenConfig{Control: SocketControl(ctx)}
 	conn, err := listener.ListenPacket(ctx, "udp", address)

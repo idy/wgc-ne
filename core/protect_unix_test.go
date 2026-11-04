@@ -8,7 +8,9 @@ import (
 	"errors"
 	"net"
 	"os"
+	"reflect"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/idy/wgc-ne/core/transport"
@@ -16,15 +18,28 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
 	singTun "github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing/common/control"
 	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/service"
 	"golang.org/x/sys/unix"
 )
 
 func TestSingBoxDirectSocketsAlwaysProtect(t *testing.T) {
-	for _, bind := range []bool{false, true} {
+	for _, mode := range []struct {
+		name       string
+		android    bool
+		autoDetect bool
+		bind       bool
+	}{
+		{name: "default"},
+		{name: "explicit-bind", bind: true},
+		{name: "android/default", android: true},
+		{name: "android/explicit-bind", android: true, bind: true},
+		{name: "android/auto-detect", android: true, autoDetect: true},
+		{name: "android/auto-detect-explicit-bind", android: true, autoDetect: true, bind: true},
+	} {
 		for _, reject := range []bool{false, true} {
-			name := map[bool]string{false: "default", true: "explicit-bind"}[bind] + "/" + map[bool]string{false: "success", true: "failure"}[reject]
+			name := mode.name + "/" + map[bool]string{false: "success", true: "failure"}[reject]
 			t.Run(name, func(t *testing.T) {
 				var mu sync.Mutex
 				var fds []int
@@ -54,13 +69,15 @@ func TestSingBoxDirectSocketsAlwaysProtect(t *testing.T) {
 					t.Fatal(err)
 				}
 				direct := map[string]any{"type": "direct", "tag": "bypass"}
-				if bind {
+				if mode.bind {
 					direct["inet4_bind_address"] = "127.0.0.1"
 				}
 				document["outbounds"] = append(document["outbounds"].([]any), direct)
-				// Retain the default auto_detect_interface=false. This bypassed
-				// PlatformInterface protection in the pinned upstream dialer.
+				document["route"].(map[string]any)["auto_detect_interface"] = mode.autoDetect
 				config.SingBox, _ = json.Marshal(document)
+				if mode.android {
+					ctx = service.ContextWith[adapter.PlatformInterface](ctx, &suppliedTUNPlatform{fd: -1, closed: true, android: true, ctx: ctx})
+				}
 				boxCtx := boxContext(ctx, config, nil)
 				options, err := parseBoxConfig(boxCtx, config)
 				if err != nil {
@@ -96,8 +113,8 @@ func TestSingBoxDirectSocketsAlwaysProtect(t *testing.T) {
 					mu.Lock()
 					opened := append([]int(nil), fds[before:]...)
 					mu.Unlock()
-					if len(opened) == 0 {
-						t.Fatalf("%s skipped protection", network)
+					if len(opened) != 1 {
+						t.Fatalf("%s protection calls = %d, want exactly 1", network, len(opened))
 					}
 					if reject {
 						if err == nil {
@@ -123,6 +140,69 @@ func TestSingBoxDirectSocketsAlwaysProtect(t *testing.T) {
 					t.Fatal("cloned services lost socket protection")
 				}
 			})
+		}
+	}
+}
+
+type delegatedNetworkManager struct {
+	adapter.NetworkManager
+	monitor          singTun.DefaultInterfaceMonitor
+	defaultInterface *adapter.NetworkInterface
+	defaultCalls     int
+	controls         []string
+}
+
+func (m *delegatedNetworkManager) InterfaceMonitor() singTun.DefaultInterfaceMonitor {
+	return m.monitor
+}
+func (m *delegatedNetworkManager) DefaultNetworkInterface() *adapter.NetworkInterface {
+	m.defaultCalls++
+	return m.defaultInterface
+}
+func (m *delegatedNetworkManager) AutoDetectInterfaceFunc() control.Func {
+	return func(string, string, syscall.RawConn) error { m.controls = append(m.controls, "bind"); return nil }
+}
+func (m *delegatedNetworkManager) AutoRedirectOutputMarkFunc() control.Func {
+	return func(string, string, syscall.RawConn) error { m.controls = append(m.controls, "mark"); return nil }
+}
+
+type delegatedInterfaceMonitor struct {
+	singTun.DefaultInterfaceMonitor
+}
+
+func TestProtectedManagerPreservesInterfacesBindingAndMarks(t *testing.T) {
+	for _, android := range []bool{false, true} {
+		original := &delegatedNetworkManager{defaultInterface: &adapter.NetworkInterface{}}
+		manager := &protectedNetworkManager{
+			NetworkManager: original, suppliedAndroid: android,
+			protect: func(string, string, syscall.RawConn) error {
+				original.controls = append(original.controls, "protect")
+				return nil
+			},
+		}
+		if manager.DefaultNetworkInterface() != nil || original.defaultCalls != 0 {
+			t.Fatal("nil monitor delegated to the unsafe upstream default-interface method")
+		}
+		original.monitor = &delegatedInterfaceMonitor{}
+		if manager.DefaultNetworkInterface() != original.defaultInterface || original.defaultCalls != 1 {
+			t.Fatal("decorator did not delegate the monitored default interface")
+		}
+		auto := manager.AutoDetectInterfaceFunc()
+		if auto == nil {
+			t.Fatal("auto-detect control must stay nonnil for the pinned UDP listener")
+		}
+		if err := auto("udp", "127.0.0.1:9", nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.AutoRedirectOutputMarkFunc()("udp", "127.0.0.1:9", nil); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"protect", "mark"}
+		if !android {
+			want = append([]string{"bind"}, want...)
+		}
+		if !reflect.DeepEqual(original.controls, want) {
+			t.Fatalf("socket controls = %v, want %v", original.controls, want)
 		}
 	}
 }

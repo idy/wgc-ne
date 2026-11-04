@@ -87,8 +87,12 @@ A missing registration is an error, never a fallback to plain UDP.
 ```
 
 An omitted wrapper base means UDP. At most eight wrapper layers are accepted.
-The default UDP transport supports the optional `listen` address; endpoints stay
-in the declared peers. A factory must not receive `base`.
+The default UDP transport supports the optional `listen` address, with a numeric
+port from 0 through 65535. Empty listen selects `:0`. Android and contexts with a
+socket protector require a numeric or empty host; preflight rejects hostname
+listeners before installing the TUN because their DNS resolution would precede
+socket protection. Unprotected Apple contexts retain hostname-listener support.
+Peer endpoints stay in the declared peers. A factory must not receive `base`.
 
 The repository includes a transparent byte-counting wrapper in
 [`example/counter`](../example/counter/register/register.go). It changes no packet

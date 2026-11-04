@@ -109,7 +109,6 @@ public final class WgcVpnService extends VpnService {
             StartRequest request = pending;
             pending = null;
             try {
-                foreground(request.label, false);
                 worker.execute(() -> open(request));
             } catch (RuntimeException error) {
                 failStart(request.generation, "tunnel_start_failed");
@@ -140,6 +139,9 @@ public final class WgcVpnService extends VpnService {
         try {
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
             else startService(intent);
+            // Binding keeps this service alive after stopSelf, so fulfill the
+            // foreground contract before a later stop can cancel the START intent.
+            foreground(label, false);
         } catch (RuntimeException error) {
             failStart(token, "tunnel_start_failed");
         }
@@ -162,7 +164,10 @@ public final class WgcVpnService extends VpnService {
             }
             List<CidrRoutes> routes = CidrRoutes.subtract(strings(settings.getJSONArray("included_routes")),
                     strings(settings.getJSONArray("excluded_routes")));
-            for (CidrRoutes route : routes) builder.addRoute(route.inetAddress(), route.prefix);
+            for (CidrRoutes route : routes) {
+                InetAddress address = route.inetAddress();
+                if (!address.isLoopbackAddress()) builder.addRoute(address, route.prefix);
+            }
             if (Build.VERSION.SDK_INT >= 29) builder.setMetered(false);
             if (!current(request.generation)) return;
             tunnel = builder.establish();
@@ -176,7 +181,8 @@ public final class WgcVpnService extends VpnService {
             if (!current(request.generation)) { cleanup(); return; }
             Map<String, Object> initial = core.status(handle);
             if (!"running".equals(initial.get("state"))) throw new CoreBridge.Failure("core_failure");
-            health = worker.scheduleWithFixedDelay(() -> poll(request.generation), 1, 1, TimeUnit.SECONDS);
+            final long token = request.generation;
+            health = worker.scheduleWithFixedDelay(() -> poll(token), 1, 1, TimeUnit.SECONDS);
             main.post(() -> {
                 if (current(request.generation)) {
                     coreStatus = initial;

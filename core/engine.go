@@ -23,8 +23,8 @@ type Engine struct {
 	err      error
 }
 
-func transportRegistryValidate(config Config) error {
-	return transport.Default.Validate(config.Transport)
+func transportRegistryValidate(ctx context.Context, config Config) error {
+	return transport.Default.ValidateContext(ctx, config.Transport)
 }
 
 // Open takes ownership of fd on EVERY path. The host installs validated VPN
@@ -75,7 +75,7 @@ func openForPlatform(ctx context.Context, fd int, config Config, options Session
 			_ = session.Close()
 		}
 	}()
-	boxCtx := service.ContextWith[adapter.PlatformInterface](boxContext(runCtx, config, session), platform)
+	boxCtx := boxContext(service.ContextWith[adapter.PlatformInterface](runCtx, platform), config, session)
 	parsed, err := parseBoxConfig(boxCtx, config)
 	if err != nil {
 		return nil, err

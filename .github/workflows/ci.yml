@@ -49,6 +49,11 @@ jobs:
           flutter-version: '3.47.2'
           channel: stable
           cache: true
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
       - name: Check JNI callback ownership
         run: |

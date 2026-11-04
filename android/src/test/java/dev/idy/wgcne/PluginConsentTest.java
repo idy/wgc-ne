@@ -2,6 +2,9 @@ package dev.idy.wgcne;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.ComponentName;
+import android.content.ServiceConnection;
+import org.mockito.ArgumentCaptor;
 import android.content.Intent;
 import android.net.VpnService;
 import android.os.Looper;
@@ -36,11 +39,13 @@ public class PluginConsentTest {
     private WgcNePlugin plugin;
     private Activity activity;
     private ActivityPluginBinding activityBinding;
+    private WgcVpnService boundService;
 
     private static final class Result implements MethodChannel.Result {
         int calls;
         String error;
-        public void success(Object value) { calls++; }
+        Object value;
+        public void success(Object value) { calls++; this.value = value; }
         public void error(String code, String message, Object details) { calls++; error = code; }
         public void notImplemented() { fail(); }
     }
@@ -54,7 +59,13 @@ public class PluginConsentTest {
     @Before public void setUp() throws Exception {
         plugin = new WgcNePlugin();
         set(plugin, "context", RuntimeEnvironment.getApplication());
-        set(plugin, "service", mock(WgcVpnService.class));
+        boundService = mock(WgcVpnService.class);
+        doAnswer(invocation -> {
+            WgcVpnService.Reply reply = invocation.getArgument(0);
+            if (reply != null) reply.success(Collections.singletonMap("state", "disconnected"));
+            return null;
+        }).when(boundService).stopTunnel(any());
+        set(plugin, "service", boundService);
         activity = Robolectric.buildActivity(Activity.class).setup().get();
         activityBinding = mock(ActivityPluginBinding.class);
         when(activityBinding.getActivity()).thenReturn(activity);
@@ -117,5 +128,77 @@ public class PluginConsentTest {
         assertEquals("cancelled", start.error);
         assertFalse(plugin.onActivityResult(code, Activity.RESULT_OK, null));
         assertEquals(1, start.calls);
+    }
+
+    private Context delayBinding() throws Exception {
+        Context context = mock(Context.class);
+        when(context.getPackageName()).thenReturn(RuntimeEnvironment.getApplication().getPackageName());
+        when(context.bindService(any(Intent.class), any(ServiceConnection.class), eq(Context.BIND_AUTO_CREATE)))
+                .thenReturn(true);
+        set(plugin, "context", context);
+        set(plugin, "service", null);
+        return context;
+    }
+
+    private void completeBinding(Context context) {
+        ArgumentCaptor<ServiceConnection> connection = ArgumentCaptor.forClass(ServiceConnection.class);
+        verify(context).bindService(any(Intent.class), connection.capture(), eq(Context.BIND_AUTO_CREATE));
+        connection.getValue().onServiceConnected(new ComponentName("test", WgcVpnService.class.getName()),
+                boundService.new LocalBinder());
+    }
+
+    private void assertStopBeforeBinding(String method) throws Exception {
+        Context context = delayBinding();
+        Result start = start();
+        Result stop = new Result();
+        plugin.onMethodCall(new MethodCall(method, Collections.emptyMap()), stop);
+        assertEquals("cancelled", start.error);
+        completeBinding(context);
+        assertEquals(1, start.calls);
+        assertEquals(1, stop.calls);
+        assertEquals(Collections.singletonMap("state", "disconnected"), stop.value);
+        assertNull(Shadows.shadowOf(activity).getNextStartedActivityForResult());
+        verify(boundService, never()).startTunnel(anyString(), anyString(), any());
+    }
+
+    @Test public void stopBeforeInitialBindingCancelsQueuedStart() throws Exception {
+        assertStopBeforeBinding("stop");
+    }
+
+    @Test public void removalBeforeInitialBindingCancelsQueuedStart() throws Exception {
+        assertStopBeforeBinding("removeProfile");
+    }
+
+    @Test public void newerStartSurvivesAnOlderQueuedStop() throws Exception {
+        Context context = delayBinding();
+        Result first = start();
+        Result stop = new Result();
+        plugin.onMethodCall(new MethodCall("stop", Collections.emptyMap()), stop);
+        Result second = start();
+        completeBinding(context);
+        assertEquals("cancelled", first.error);
+        assertEquals(1, stop.calls);
+        assertEquals(0, second.calls);
+        assertTrue(plugin.onActivityResult(requestCode(), Activity.RESULT_OK, null));
+        verify(boundService).startTunnel(eq("{}"), eq("WGC NE"), any());
+    }
+
+    @Test public void anotherEngineCanCancelAnOutstandingConsent() throws Exception {
+        Result first = start();
+        int code = requestCode();
+        WgcNePlugin other = new WgcNePlugin();
+        set(other, "context", RuntimeEnvironment.getApplication());
+        set(other, "service", boundService);
+        try {
+            Result stop = new Result();
+            other.onMethodCall(new MethodCall("stop", Collections.emptyMap()), stop);
+            assertEquals("cancelled", first.error);
+            assertEquals(1, first.calls);
+            assertEquals(1, stop.calls);
+            assertFalse(plugin.onActivityResult(code, Activity.RESULT_OK, null));
+            verify(boundService, never()).startTunnel(anyString(), anyString(), any());
+        } finally {
+            other.onDetachedFromEngine(null);
+        }
     }
 }

@@ -134,17 +134,31 @@ func (e *releasingEngine) Close() error {
 	return err
 }
 
-func (b *Bridge) startWithSocketProtector(fd int, raw []byte, timeout time.Duration, protector transport.SocketProtector, release func()) string {
+type terminatingEngine interface {
+	tunnelEngine
+	Done() <-chan struct{}
+}
+
+func engineWithRelease(engine terminatingEngine, release func()) tunnelEngine {
 	if release == nil {
-		release = func() {}
+		return engine
 	}
-	release = sync.OnceFunc(release)
+	// Core failures can close the engine before the host calls Stop. Retire the
+	// protector promptly, while keeping the handle available for safe status.
+	go func() { <-engine.Done(); release() }()
+	return &releasingEngine{tunnelEngine: engine, release: release}
+}
+
+func (b *Bridge) startWithSocketProtector(fd int, raw []byte, timeout time.Duration, protector transport.SocketProtector, release func()) string {
 	transferred := false
-	defer func() {
-		if !transferred {
-			release()
-		}
-	}()
+	if release != nil {
+		release = sync.OnceFunc(release)
+		defer func() {
+			if !transferred {
+				release()
+			}
+		}()
+	}
 	config, err := core.DecodeConfig(raw)
 	if err != nil {
 		core.CloseOwnedFD(fd)
@@ -158,11 +172,8 @@ func (b *Bridge) startWithSocketProtector(fd int, raw []byte, timeout time.Durat
 		startup.abort()
 		return failed("start_failed", "The tunnel core could not start")
 	}
-	owned := &releasingEngine{tunnelEngine: engine, release: release}
+	owned := engineWithRelease(engine, release)
 	transferred = true
-	// Core failures can close the engine before the host calls Stop. Retire the
-	// protector promptly, while keeping the handle available for safe status.
-	go func() { <-engine.Done(); release() }()
 	id, ok := b.publish(owned, startup)
 	if !ok {
 		return failed("start_failed", "The tunnel core could not start")

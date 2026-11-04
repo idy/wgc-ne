@@ -84,8 +84,10 @@ result handling are automatic; do not override `MainActivity.onActivityResult`
 to start the tunnel yourself.
 
 There is one tunnel per application. Conflicting starts fail with
-`profile_conflict`. Stop during native startup cancels publication of a late
-handle and closes it before releasing the service's TUN descriptor. Native calls
+`profile_conflict`. Stop also cancels a start waiting for service binding or VPN
+consent, including requests from another Flutter engine. Stop during native
+startup cancels publication of a late handle and closes it before releasing the
+service's TUN descriptor. Native calls
 run on a serialized worker; status returns a public snapshot refreshed by the
 service's own health polling. `connected` describes local startup, not remote
 reachability. Disposing a Dart client releases that client's polling and pending
@@ -118,8 +120,10 @@ consent, which the user manages in system Settings.
 The shared validated settings provide tunnel addresses, MTU, DNS, included routes,
 and excluded routes, including peer endpoint host routes. Exclusions are
 subtracted from included prefixes before installing routes, including on Android
-versions before API 33. Explicit empty includes install no routes. Configurations
-whose subtraction produces more than 8,192 routes are rejected.
+versions before API 33. Both input unions are normalized before subtraction, so
+ordering and redundant prefixes do not change the result. Explicit empty includes
+install no routes. More than 8,192 final canonical routes are rejected. Loopback-only
+fragments are omitted because Android rejects them and loopback traffic stays local.
 
 Native sockets are protected through `VpnService.protect(fd)` before bind/connect.
 Protection failure fails the operation. Both the WGC UDP transport and sing-box
@@ -129,6 +133,9 @@ socket they create, including sockets created after startup.
 
 The service uses Android's default underlying network (`setUnderlyingNetworks(null)`)
 and does not pin Wi-Fi/cellular interfaces or implement a separate handover policy.
+Default-interface metadata is unavailable: network-type, expensive, and constrained
+rule predicates safely evaluate as unavailable rather than identifying Wi-Fi/cellular.
+Offline validation uses the same platform capabilities without probing netlink.
 Peer endpoint exclusions alone are insufficient for arbitrary custom relay
 endpoints; socket protection is required. The SDK does not promise seamless
 network switching, always-on/lockdown operation, automatic process recovery, or

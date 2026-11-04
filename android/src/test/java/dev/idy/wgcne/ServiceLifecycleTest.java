@@ -5,6 +5,7 @@ import android.net.VpnService;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import org.json.JSONObject;
+import org.json.JSONArray;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -50,6 +51,7 @@ public class ServiceLifecycleTest {
         // RouteInfo relies on Android-only InetAddress fields absent on the host
         // JVM. CIDR subtraction has separate real numeric-address tests.
         @Implementation protected VpnService.Builder addRoute(InetAddress address, int prefix) {
+            if (address.isLoopbackAddress()) throw new IllegalArgumentException("Bad address");
             return builder;
         }
         @Implementation protected ParcelFileDescriptor establish() throws Exception {
@@ -97,12 +99,16 @@ public class ServiceLifecycleTest {
         volatile boolean failed;
         volatile boolean rejectConfiguration;
         volatile boolean block;
+        boolean ipv6;
+        String excludedRoute = "203.0.113.10/32";
         public JSONObject validate(String configuration) throws CoreBridge.Failure {
             if (rejectConfiguration) throw new CoreBridge.Failure("invalid_configuration");
             try {
-                return new JSONObject("{\"mtu\":1280,\"addresses\":[\"10.7.0.2/32\"]," +
-                        "\"dns_servers\":[\"198.18.0.2\"],\"included_routes\":[\"0.0.0.0/0\"]," +
-                        "\"excluded_routes\":[\"203.0.113.10/32\"]}");
+                return new JSONObject().put("mtu", 1280)
+                        .put("addresses", new JSONArray().put(ipv6 ? "2001:db8::2/128" : "10.7.0.2/32"))
+                        .put("dns_servers", new JSONArray().put(ipv6 ? "2001:2::2" : "198.18.0.2"))
+                        .put("included_routes", new JSONArray().put(ipv6 ? "::/0" : "0.0.0.0/0"))
+                        .put("excluded_routes", new JSONArray().put(excludedRoute));
             } catch (Exception error) { throw new AssertionError(error); }
         }
         public long start(int fd, String configuration, NativeCore.Protector protector) {
@@ -134,7 +140,12 @@ public class ServiceLifecycleTest {
 
     @After public void tearDown() throws Exception {
         core.release.countDown();
-        if (controller != null) controller.destroy();
+        if (controller != null) {
+            Reply stopped = new Reply();
+            service.stopTunnel(stopped);
+            await(() -> stopped.calls == 1);
+            controller.destroy();
+        }
         readEnd.close();
     }
 
@@ -160,6 +171,21 @@ public class ServiceLifecycleTest {
         Reply reply = start();
         await(() -> reply.calls == 1);
         assertEquals("invalid_configuration", reply.error);
+        assertNull(established);
+        assertEquals("disconnected", service.snapshot().get("state"));
+    }
+
+    @Test public void cancellingBeforeStartDeliveryStillFulfillsForegroundContract() throws Exception {
+        Reply start = new Reply();
+        service.startTunnel("synthetic-test-configuration", "Test VPN", start);
+        assertNotNull(Shadows.shadowOf(service).getLastForegroundNotification());
+        Reply stop = new Reply();
+        service.stopTunnel(stop);
+        service.onStartCommand(new Intent().setAction(WgcVpnService.START), 0, 1);
+        await(() -> stop.calls == 1);
+        assertEquals("cancelled", start.error);
+        assertEquals(1, start.calls);
+        assertEquals(1, core.entered.getCount());
         assertNull(established);
         assertEquals("disconnected", service.snapshot().get("state"));
     }
@@ -215,6 +241,23 @@ public class ServiceLifecycleTest {
         await(() -> service.snapshot().get("state").equals("disconnected"));
         assertEquals(1, core.stops);
         assertFalse(established.getFileDescriptor().valid());
+    }
+
+    @Test public void publicPeerAdjacentToLoopbackStartsNormally() throws Exception {
+        core.excludedRoute = "126.1.2.3/32";
+        Reply start = start();
+        await(() -> start.calls == 1);
+        assertNull(start.error);
+        assertEquals("connected", start.value.get("state"));
+    }
+
+    @Test public void ipv6ExclusionGeneratingLoopbackStartsNormally() throws Exception {
+        core.ipv6 = true;
+        core.excludedRoute = "::/128";
+        Reply start = start();
+        await(() -> start.calls == 1);
+        assertNull(start.error);
+        assertEquals("connected", start.value.get("state"));
     }
 
     @Test public void coldDisconnectIntentDoesNotLeaveAnIdleStartedService() {

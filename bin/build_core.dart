@@ -6,6 +6,16 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 const moduleName = 'github.com/idy/wgc-ne/core';
+const androidTargets = {
+  'arm64-v8a': (goArch: 'arm64', triple: 'aarch64-linux-android'),
+  'armeabi-v7a': (goArch: 'arm', triple: 'armv7a-linux-androideabi'),
+  'x86_64': (goArch: 'amd64', triple: 'x86_64-linux-android'),
+};
+
+typedef AndroidToolchain = ({
+  String revision,
+  Map<String, ({String goArch, String compiler})> targets,
+});
 
 Future<void> run(String command, List<String> arguments,
     {String? directory, Map<String, String>? environment}) async {
@@ -53,8 +63,7 @@ void publishBuild(String staged, Directory target, String packageRoot,
   stdout.writeln('Built ${target.path}');
 }
 
-Future<String> buildAndroid(String moduleDirectory, String staged,
-    String? requestedNdk, List<String> abis) async {
+AndroidToolchain preflightAndroid(String? requestedNdk, List<String> abis) {
   final sdk = Platform.environment['ANDROID_HOME'] ??
       Platform.environment['ANDROID_SDK_ROOT'];
   final ndk = requestedNdk ??
@@ -74,16 +83,22 @@ Future<String> buildAndroid(String moduleDirectory, String staged,
   }
   final toolchain = p.join(ndk, 'toolchains/llvm/prebuilt',
       Platform.isMacOS ? 'darwin-x86_64' : 'linux-x86_64', 'bin');
-  const targets = {
-    'arm64-v8a': ['arm64', 'aarch64-linux-android'],
-    'armeabi-v7a': ['arm', 'armv7a-linux-androideabi'],
-    'x86_64': ['amd64', 'x86_64-linux-android'],
-  };
+  final targets = <String, ({String goArch, String compiler})>{};
   for (final abi in abis) {
-    final target = targets[abi]!;
-    final clang = p.join(toolchain, '${target[1]}23-clang');
+    final target = androidTargets[abi]!;
+    final clang = p.join(toolchain, '${target.triple}23-clang');
     if (!File(clang).existsSync())
       throw StateError('Android NDK compiler is missing');
+    targets[abi] = (goArch: target.goArch, compiler: clang);
+  }
+  return (revision: revision, targets: targets);
+}
+
+Future<void> buildAndroid(
+    String moduleDirectory, String staged, AndroidToolchain toolchain) async {
+  for (final entry in toolchain.targets.entries) {
+    final abi = entry.key;
+    final target = entry.value;
     final directory = Directory(p.join(staged, abi))
       ..createSync(recursive: true);
     stdout.writeln('Building Android $abi (API 23)');
@@ -104,15 +119,14 @@ Future<String> buildAndroid(String moduleDirectory, String staged,
         environment: {
           'CGO_ENABLED': '1',
           'GOOS': 'android',
-          'GOARCH': target[0],
-          if (target[0] == 'arm') 'GOARM': '7',
-          'CC': clang,
+          'GOARCH': target.goArch,
+          if (target.goArch == 'arm') 'GOARM': '7',
+          'CC': target.compiler,
           'CGO_LDFLAGS': '-Wl,-z,max-page-size=16384',
         });
     final header = File(p.join(directory.path, 'libwgcne.h'));
     if (header.existsSync()) header.deleteSync();
   }
-  return revision;
 }
 
 void main(List<String> arguments) async {
@@ -174,10 +188,9 @@ void main(List<String> arguments) async {
       throw ArgumentError('Android options require --platform android');
     if (androidAbis.isEmpty ||
         androidAbis.toSet().length != androidAbis.length ||
-        androidAbis.any(
-            (abi) => !['arm64-v8a', 'armeabi-v7a', 'x86_64'].contains(abi)))
+        androidAbis.any((abi) => !androidTargets.containsKey(abi)))
       throw ArgumentError(
-          'Supported Android ABIs: arm64-v8a, armeabi-v7a, x86_64');
+          'Supported Android ABIs: ${androidTargets.keys.join(', ')}');
     final destination = requestedDestination ??
         p.absolute(
             android ? 'build/android/jniLibs' : 'build/WGCCore.xcframework');
@@ -251,6 +264,8 @@ void main(List<String> arguments) async {
         extensions.add(entry);
       }
     }
+    final androidToolchain =
+        android ? preflightAndroid(ndkPath, androidAbis) : null;
     temporary = await Directory.systemTemp.createTemp('wgc-ne-core-');
     final moduleDirectory = Directory(p.join(temporary.path, 'module'))
       ..createSync();
@@ -305,13 +320,12 @@ void main(List<String> arguments) async {
     };
     if (android) {
       final staged = p.join(temporary.path, 'jniLibs');
-      final revision = await buildAndroid(
-          moduleDirectory.path, staged, ndkPath, androidAbis);
+      await buildAndroid(moduleDirectory.path, staged, androidToolchain!);
       publishBuild(staged, target, packageRoot, {
         ...metadata,
         'android_api': 23,
         'android_abis': androidAbis,
-        'ndk_version': revision,
+        'ndk_version': androidToolchain.revision,
       });
       return;
     }

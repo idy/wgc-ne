@@ -17,16 +17,10 @@ final class WgcNe {
   })  : _android = false,
         _channel = channel ?? const MethodChannel('dev.idy.wgc_ne/methods') {
     if (!_identifier(providerBundleIdentifier) ||
-        !_identifier(keychainAccessGroup) ||
-        (localizedDescription != null &&
-            (localizedDescription!.isEmpty ||
-                localizedDescription!.length > 255)) ||
-        pollingInterval < const Duration(milliseconds: 100) ||
-        pollingInterval > const Duration(minutes: 1) ||
-        requestTimeout <= Duration.zero ||
-        requestTimeout > const Duration(minutes: 2)) {
+        !_identifier(keychainAccessGroup)) {
       throw const WgcException(WgcErrorCode.invalidArguments);
     }
+    _validateOptions();
   }
 
   /// Controls Android's app-owned VpnService. Call start from a visible Activity
@@ -40,6 +34,10 @@ final class WgcNe {
         keychainAccessGroup = '',
         _android = true,
         _channel = channel ?? const MethodChannel('dev.idy.wgc_ne/methods') {
+    _validateOptions();
+  }
+
+  void _validateOptions() {
     if ((localizedDescription != null &&
             (localizedDescription!.isEmpty ||
                 localizedDescription!.length > 255)) ||

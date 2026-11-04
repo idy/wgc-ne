@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/idy/wgc-ne/core"
+	"github.com/idy/wgc-ne/core/transport"
 	"golang.org/x/sys/unix"
 )
 
@@ -37,6 +38,46 @@ func protectedStartConfig(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func TestStartOptionalCallbacksConsumeFD(t *testing.T) {
+	for _, withProtector := range []bool{false, true} {
+		for _, withRelease := range []bool{false, true} {
+			reader, writer, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+			owned, err := unix.Dup(int(reader.Fd()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var protector transport.SocketProtector
+			if withProtector {
+				protector = func(int) error { t.Error("invalid configuration opened a socket"); return nil }
+			}
+			var releases int
+			var release func()
+			if withRelease {
+				release = func() { releases++ }
+			}
+			var bridge Bridge
+			answer := bridge.StartWithSocketProtector(owned, nil, protector, release)
+			if answer != failed("invalid_configuration", "Invalid tunnel configuration") {
+				t.Fatalf("invalid start returned %s", answer)
+			}
+			want := 0
+			if withRelease {
+				want = 1
+			}
+			if releases != want {
+				t.Fatalf("release with protector=%v/release=%v called %d times", withProtector, withRelease, releases)
+			}
+			if _, err := unix.FcntlInt(uintptr(owned), unix.F_GETFD, 0); err != unix.EBADF {
+				t.Fatalf("invalid start leaked owned fd: %v", err)
+			}
+		}
+	}
 }
 
 func TestProtectedStartFailureConsumesFDAndProtector(t *testing.T) {

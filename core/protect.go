@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"syscall"
 
 	"github.com/idy/wgc-ne/core/transport"
 	"github.com/sagernet/sing-box/adapter"
@@ -19,7 +20,27 @@ import (
 // The socket integration tests must run when upgrading the pinned sing-box.
 type protectedNetworkManager struct {
 	adapter.NetworkManager
-	protect control.Func
+	protect         control.Func
+	suppliedAndroid bool
+}
+
+func (m *protectedNetworkManager) DefaultNetworkInterface() *adapter.NetworkInterface {
+	// The supplied Android platform intentionally has no interface monitor.
+	// The pinned manager dereferences it even for route/DNS network predicates.
+	if m.InterfaceMonitor() == nil {
+		return nil
+	}
+	return m.NetworkManager.DefaultNetworkInterface()
+}
+
+func (m *protectedNetworkManager) AutoDetectInterfaceFunc() control.Func {
+	if m.suppliedAndroid {
+		// This platform's auto-detect control only protects sockets; the
+		// unconditional output-mark hook below already does that. Keep a nonnil
+		// control because the pinned UDP listener calls autoDetectBindFunc.
+		return func(string, string, syscall.RawConn) error { return nil }
+	}
+	return m.NetworkManager.AutoDetectInterfaceFunc()
 }
 
 func (m *protectedNetworkManager) AutoRedirectOutputMarkFunc() control.Func {
@@ -33,7 +54,12 @@ type protectedServiceRegistry struct {
 
 func (r *protectedServiceRegistry) Register(key, value any) any {
 	if key == (*adapter.NetworkManager)(nil) && value != nil {
-		value = &protectedNetworkManager{NetworkManager: value.(adapter.NetworkManager), protect: r.protect}
+		platform, _ := r.Get((*adapter.PlatformInterface)(nil)).(*suppliedTUNPlatform)
+		value = &protectedNetworkManager{
+			NetworkManager:  value.(adapter.NetworkManager),
+			protect:         r.protect,
+			suppliedAndroid: platform != nil && platform.android,
+		}
 	}
 	return r.Registry.Register(key, value)
 }
@@ -43,7 +69,8 @@ func (r *protectedServiceRegistry) Clone() service.Registry {
 }
 
 func protectedBoxContext(ctx context.Context) context.Context {
-	if !transport.HasSocketProtector(ctx) {
+	platform, _ := service.FromContext[adapter.PlatformInterface](ctx).(*suppliedTUNPlatform)
+	if !transport.HasSocketProtector(ctx) && !(platform != nil && platform.android) {
 		return ctx
 	}
 	registry := service.RegistryFromContext(ctx)

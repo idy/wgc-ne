@@ -26,6 +26,8 @@ import io.flutter.plugin.common.PluginRegistry;
 public final class WgcNePlugin implements FlutterPlugin, ActivityAware,
         MethodChannel.MethodCallHandler, PluginRegistry.ActivityResultListener {
     private static final AtomicInteger consentCodes = new AtomicInteger(0x1747);
+    // Flutter engines in this app share the same VPN service and pending start.
+    private static OnceReply pendingStart;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Bound> waiting = new ArrayList<>();
     private final Set<OnceReply> replies = new HashSet<>();
@@ -95,17 +97,17 @@ public final class WgcNePlugin implements FlutterPlugin, ActivityAware,
                 reply.failure("invalid_configuration"); return;
             }
             if (label.isEmpty() || label.length() > 255) { reply.failure("invalid_arguments"); return; }
+            if (pendingStart != null) { reply.failure("profile_conflict"); return; }
+            pendingStart = reply;
             ensureBound(bound -> {
-                if (!reply.done) prepare(configuration, label, reply);
+                if (!reply.isDone()) prepare(configuration, label, reply);
             });
         } else {
-            if (!call.method.equals("status") && consent != null) {
-                Consent cancelled = consent;
-                consent = null;
-                cancelled.reply.failure("cancelled");
+            if (!call.method.equals("status") && pendingStart != null) {
+                pendingStart.failure("cancelled");
             }
             ensureBound(bound -> {
-                if (reply.done) return;
+                if (reply.isDone()) return;
                 if (call.method.equals("status")) reply.success(bound.snapshot());
                 else bound.stopTunnel(reply);
             });
@@ -145,7 +147,7 @@ public final class WgcNePlugin implements FlutterPlugin, ActivityAware,
         if (consent == null || requestCode != consent.requestCode) return false;
         Consent request = consent;
         consent = null;
-        if (request.reply.done) return true;
+        if (request.reply.isDone()) return true;
         if (resultCode != Activity.RESULT_OK) request.reply.failure("permission_denied");
         else if (service == null) request.reply.failure("provider_unavailable");
         else service.startTunnel(request.configuration, request.label, request.reply);
@@ -170,20 +172,20 @@ public final class WgcNePlugin implements FlutterPlugin, ActivityAware,
             failure("timeout");
             if (service != null) service.cancelStart(this);
         };
-        boolean done;
         OnceReply(MethodChannel.Result result) {
             this.result = result;
             replies.add(this);
             main.postDelayed(timeout, 40_000);
         }
+        boolean isDone() { return result == null; }
         private MethodChannel.Result take() {
-            if (done) return null;
-            done = true;
+            MethodChannel.Result value = result;
+            if (value == null) return null;
+            result = null;
             main.removeCallbacks(timeout);
             replies.remove(this);
+            if (pendingStart == this) pendingStart = null;
             if (consent != null && consent.reply == this) consent = null;
-            MethodChannel.Result value = result;
-            result = null;
             return value;
         }
         @Override public void success(Map<String, Object> value) {
