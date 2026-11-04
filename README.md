@@ -150,6 +150,25 @@ setup regression tests and native source checks. Signed device and
 production-network acceptance are separate from these checks; see
 [validation](docs/validation.md).
 
+## Website development
+
+The static project page is in `site/`, with no build step or package dependencies.
+From the repository root, preview it with `python3 -m http.server 8080 --directory site`.
+`index.html` is readable in English without JavaScript; `script.js` provides Chinese
+translations, the interactive architecture diagram, copy feedback, and live
+release downloads. `styles.css` defines the layout and light/dark color tokens.
+
+`site/shared/` contains the common idy.dev header/footer styles, preference and
+release helpers, and the locally hosted Manrope font with its OFL license. Keep
+these files identical across the idy.dev sites. Language follows the browser and
+theme follows the system until a visitor saves a manual choice in the header.
+The public GitHub Releases API selects the latest stable release, or the newest
+published preview when no stable release exists. XCFramework and checksum links
+use uploaded assets' `browser_download_url` values; missing assets are not offered.
+API failures leave a working Releases link with no pinned latest version. Check
+both languages, manual and system themes, 375px layouts, diagram and copy controls,
+and release failure/missing-asset states when changing the website.
+
 ## License
 
 GPL-3.0-or-later. WGC retains its MIT license; sing-box and other dependencies
