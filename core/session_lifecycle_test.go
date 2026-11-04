@@ -432,30 +432,121 @@ func TestSessionFatalReceiveStopsSession(t *testing.T) {
 	}
 }
 
-func TestSessionTerminalSendErrorStopsSession(t *testing.T) {
-	config := testConfig(t)
-	session, err := NewSession(context.Background(), config, SessionOptions{})
+type sessionReadDevice struct {
+	sg.Device
+	read func([][]byte, []int, int) (int, error)
+}
+
+func (d *sessionReadDevice) Read(buffers [][]byte, sizes []int, offset int) (int, error) {
+	return d.read(buffers, sizes, offset)
+}
+
+func TestSessionBlockedPeerDoesNotStopAuthorizedPeer(t *testing.T) {
+	private, public := testKeys(t)
+	allowedRemote := newSessionTestPeer(t, public)
+	blockedRemote := newSessionTestPeer(t, public)
+	session, err := NewSession(context.Background(), Config{Version: 1, PrivateKey: private, Addresses: []string{"10.7.0.2/32"}, Peers: []Peer{
+		{ID: "allowed", PublicKey: allowedRemote.public, Endpoint: allowedRemote.endpoint},
+		{ID: "blocked", PublicKey: blockedRemote.public, Endpoint: blockedRemote.endpoint},
+	}}, SessionOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	key, _ := parseKey(config.Peers[0].PublicKey)
+	allowed := sessionTestUDP(t, session, "allowed")
+	blocked := sessionTestUDP(t, session, "blocked")
+	warmSessionTestPeer(t, allowed, allowedRemote)
+	packet := warmSessionTestPeer(t, blocked, blockedRemote)
+	key, _ := parseKey(blockedRemote.public)
 	peer, ok := session.conn.Peer(key)
-	if !ok {
-		t.Fatal("configured peer was not admitted")
+	if !ok || !peer.Block() {
+		t.Fatal("configured peer was not blocked")
 	}
-	peer.Block()
-	conn := sessionTestUDP(t, session, "exit")
-	if _, err := conn.Write([]byte("blocked")); err != nil {
+	processed := make(chan struct{})
+	read := false
+	device := &sessionReadDevice{read: func(buffers [][]byte, sizes []int, offset int) (int, error) {
+		if !read {
+			read = true
+			sizes[0] = copy(buffers[0][offset:], packet)
+			return 1, nil
+		}
+		// The next Read proves send processed the real WGC WriteTo result.
+		close(processed)
+		<-session.ctx.Done()
+		return 0, session.ctx.Err()
+	}}
+	// Drive another sender through the real shared connection without replacing
+	// any running stack device. Cancellation releases its final Read.
+	session.senders.Add(1)
+	go session.send(&peerDevice{device: device, key: key}, 1280)
+	select {
+	case <-processed:
+	case <-session.Done():
+		t.Fatalf("blocked peer stopped the session: %v", session.Err())
+	case <-time.After(3 * time.Second):
+		t.Fatal("sender did not process the blocked peer's packet")
+	}
+	if err := session.Err(); err != nil || session.Status().State != "running" {
+		t.Fatalf("blocked peer changed session health: %v", err)
+	}
+	clientKey, _ := parseKey(public)
+	roundTrip := func(conn net.Conn, remote *sessionTestPeer, payload []byte) {
+		t.Helper()
+		if _, err := conn.Write(payload); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.NewTimer(3 * time.Second)
+		defer deadline.Stop()
+		var received []byte
+		for received == nil {
+			select {
+			case candidate := <-remote.packets:
+				if bytes.HasSuffix(candidate, payload) {
+					received = candidate
+				}
+			case <-session.Done():
+				t.Fatalf("blocked peer stopped traffic: %v", session.Err())
+			case <-deadline.C:
+				t.Fatalf("peer did not receive %q", payload)
+			}
+		}
+		if _, _, err := remote.conn.WriteTo(sessionTestUDPReply(t, received), clientKey); err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		reply := make([]byte, 64)
+		n, err := conn.Read(reply)
+		if err != nil || !bytes.Equal(reply[:n], payload) {
+			t.Fatalf("round trip: payload=%q want=%q err=%v", reply[:n], payload, err)
+		}
+	}
+	roundTrip(allowed, allowedRemote, []byte("authorized after block"))
+	if !peer.Unblock() {
+		t.Fatal("blocked peer did not unblock")
+	}
+	roundTrip(blocked, blockedRemote, []byte("recovered after unblock"))
+	if err := session.Err(); err != nil || session.Status().State != "running" {
+		t.Fatalf("peer recovery changed session health: %v", err)
+	}
+}
+
+func TestSessionTerminalDeviceReadErrorStopsSession(t *testing.T) {
+	session, err := NewSession(context.Background(), testConfig(t), SessionOptions{})
+	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = session.Close() })
+	fatal := errors.New("fatal device read")
+	device := &sessionReadDevice{read: func([][]byte, []int, int) (int, error) { return 0, fatal }}
+	session.senders.Add(1)
+	go session.send(&peerDevice{device: device}, 1280)
 	select {
 	case <-session.Done():
 	case <-time.After(3 * time.Second):
-		t.Fatal("terminal shared-queue send error did not stop the session")
+		t.Fatal("terminal device read error did not stop the session")
 	}
-	if !errors.Is(session.Err(), wgc.ErrPeerBlocked) {
-		t.Fatalf("terminal send error was not preserved: %v", session.Err())
+	if !errors.Is(session.Err(), fatal) || session.Status().State != "stopped" {
+		t.Fatalf("terminal device read error was not preserved: %v", session.Err())
 	}
 }
 

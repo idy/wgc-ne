@@ -3,10 +3,12 @@ module github.com/idy/wgc-ne/core
 go 1.26.0
 
 require (
-	github.com/idy/wgc v0.2.0
+	github.com/idy/wgc v0.2.1-0.20261103184829-50549511c059
+	github.com/sagernet/gvisor v0.0.0-20260727.0-sing-box-mod.1
 	github.com/sagernet/sing v0.9.7-0.20261023115459-5dc452e537bf
 	github.com/sagernet/sing-box v1.14.4
 	github.com/sagernet/sing-tun v0.9.7-0.20261023115432-040db71fcd33
+	github.com/sagernet/wireguard-go v0.0.8-0.20261022215841-e4d85ef2ed38
 	golang.org/x/crypto v0.55.0
 	golang.org/x/sys v0.48.0
 )
@@ -42,7 +44,6 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/sagernet/bbolt v0.0.0-20260915102804-500ee1e84832 // indirect
 	github.com/sagernet/fswatch v0.1.2 // indirect
-	github.com/sagernet/gvisor v0.0.0-20260727.0-sing-box-mod.1 // indirect
 	github.com/sagernet/netlink v0.0.0-20260814022025-64455d367bbf // indirect
 	github.com/sagernet/nftables v0.3.0-mod.4 // indirect
 	github.com/sagernet/quic-go v0.61.0-sing-box-mod.12 // indirect
@@ -52,7 +53,6 @@ require (
 	github.com/sagernet/sing-usbip v0.0.0-20260817040617-28bd42667eca // indirect
 	github.com/sagernet/sing-vmess v0.2.9-0.20261019223527-a0c58542bd9d // indirect
 	github.com/sagernet/smux v1.5.50-sing-box-mod.1 // indirect
-	github.com/sagernet/wireguard-go v0.0.8-0.20261022215841-e4d85ef2ed38 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/zeebo/blake3 v0.2.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect

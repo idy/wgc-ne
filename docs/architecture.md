@@ -1,8 +1,9 @@
 # WGC NE architecture
 
 WGC NE is an independent Flutter plugin and Apple Network Extension SDK. Its Go
-core uses `github.com/idy/wgc` v0.2.0 for authenticated WireGuard packets and
-sing-box v1.14.4 for userspace TCP/UDP, TUN flow handling, DNS, and routing.
+core pins `github.com/idy/wgc` at `v0.2.1-0.20261103184829-50549511c059` for
+authenticated WireGuard packets and uses sing-box v1.14.4 for userspace TCP/UDP,
+TUN flow handling, DNS, and routing.
 It is not an official WireGuard or sing-box application.
 
 ## Boundaries

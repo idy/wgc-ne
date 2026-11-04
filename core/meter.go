@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 )
 
-// Counters live at the selected transport boundary. WGC v0.2.0's optional
-// receive statistics assume serial receive handling; its delivery queue uses
-// concurrent workers. Keep those counters disabled and use atomic totals here.
+// Counters live at the selected transport boundary. Keep WGC's optional peer
+// statistics disabled: these atomic totals include encrypted datagrams and
+// handshakes without maintaining duplicate accounting.
 type meteredTransport struct {
 	wgc.Transport
 	sentBytes, receivedBytes, sentPackets, receivedPackets atomic.Uint64

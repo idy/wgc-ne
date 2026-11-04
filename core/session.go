@@ -147,8 +147,8 @@ func (s *Session) send(peer *peerDevice, mtu int) {
 		// Keep draining stack output during shutdown: an in-flight inbound
 		// injection may need room for its response before the device can close.
 		if count > 0 && s.ctx.Err() == nil {
-			// Admission denial applies only to this peer; later packets retry.
-			if _, _, err := s.conn.WriteTo(buffers[0][:sizes[0]], peer.key); err != nil && !errors.Is(err, wgc.ErrPeerNotFound) {
+			// Admission denial and blocking apply only to this peer; later packets retry.
+			if _, _, err := s.conn.WriteTo(buffers[0][:sizes[0]], peer.key); err != nil && !errors.Is(err, wgc.ErrPeerNotFound) && !errors.Is(err, wgc.ErrPeerBlocked) {
 				s.fail(err)
 			}
 		}

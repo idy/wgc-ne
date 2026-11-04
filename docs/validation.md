@@ -26,13 +26,13 @@ keys, loopback UDP, and userspace IP stacks without modifying host routes.
 The interoperability server uses the unmodified WireGuard protocol implementation
 in the pinned SagerNet wireguard-go dependency, not a second WGC instance.
 
-WGC v0.2.0's optional receive-statistics counters can race under its concurrent
-receive workers. This core disables those optional counters and uses independent
-atomic totals at the selected transport boundary. Repeated race-enabled transport
-round trips passed with that configuration.
+The core pins WGC `v0.2.1-0.20261103184829-50549511c059`, which includes upstream
+handshake, session, queue, and statistics synchronization fixes. Optional WGC peer
+statistics remain disabled to avoid duplicate accounting; SDK counters use
+independent atomic totals at the selected transport boundary.
 
-WGC v0.2.0 does not retain application datagrams that trigger an initial
-handshake. The stock-peer interoperability test retries UDP, so it does not
+This WGC revision still does not retain application datagrams that trigger an
+initial handshake. The stock-peer interoperability test retries UDP, so it does not
 establish first-datagram delivery. A cold session's first UDP DNS exchange can
 therefore time out even after the handshake succeeds; this remains a limitation
 of the pinned dependency.

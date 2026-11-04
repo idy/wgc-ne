@@ -1,6 +1,8 @@
 # WGC NE Go core
 
-Module `github.com/idy/wgc-ne/core` combines WGC v0.2.0 with sing-box v1.14.4.
+Module `github.com/idy/wgc-ne/core` combines WGC
+`v0.2.1-0.20261103184829-50549511c059` with sing-box v1.14.4. The WGC pseudo-version
+pins upstream commit `50549511c059` before its next tagged release.
 Build and test with `-tags with_gvisor` using Go 1.26+.
 
 `NewSession` provides userspace `DialPeer` TCP/UDP connections without an OS TUN.
@@ -13,9 +15,9 @@ Transport implementations register with `transport.RegisterFactory` or
 imports selected registration packages into the core at compile time.
 
 The core uses atomic counters at the selected transport boundary and disables
-WGC v0.2.0's optional receive statistics, whose internal receive workers can race.
-Counters include encrypted datagrams and handshake traffic, not just application
-payloads. Private transport internals may account for additional wire overhead.
+WGC's optional peer statistics to avoid duplicate accounting. Counters include
+encrypted datagrams and handshake traffic, not just application payloads. Private
+transport internals may account for additional wire overhead.
 
 See the repository's [architecture](https://github.com/idy/wgc-ne/blob/main/docs/architecture.md),
 [transport guide](https://github.com/idy/wgc-ne/blob/main/docs/transports.md), and

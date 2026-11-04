@@ -17,8 +17,10 @@ Future<void> run(String command, List<String> arguments,
   if (code != 0) throw StateError('$command failed with exit code $code');
 }
 
-Future<String> output(String command, List<String> arguments) async {
-  final result = await Process.run(command, arguments);
+Future<String> output(String command, List<String> arguments,
+    {String? directory}) async {
+  final result =
+      await Process.run(command, arguments, workingDirectory: directory);
   if (result.exitCode != 0) throw StateError('$command failed');
   return result.stdout.toString().trim();
 }
@@ -165,6 +167,9 @@ void main(List<String> arguments) async {
           directory: moduleDirectory.path);
     }
     await run('go', ['mod', 'tidy'], directory: moduleDirectory.path);
+    final wgcVersion = await output(
+        'go', ['list', '-m', '-f', '{{.Version}}', 'github.com/idy/wgc'],
+        directory: moduleDirectory.path);
     final clang = await output('xcrun', ['--find', 'clang']);
     final libraries = <String>[];
     final slices = <String, List<String>>{
@@ -230,7 +235,7 @@ void main(List<String> arguments) async {
     File(p.join(staged, 'wgc-ne-build.json')).writeAsStringSync(jsonEncode({
       'abi_version': 1,
       'core_version': '0.1.0',
-      'wgc_version': '0.2.0',
+      'wgc_version': wgcVersion.replaceFirst(RegExp(r'^v'), ''),
       'sing_box_version': '1.14.4',
       'platform': platform,
       'extensions': imports
