@@ -204,16 +204,17 @@ class ApkTests(unittest.TestCase):
             for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
                 with self.subTest(bits=bits, compression=compression):
                     data = make_elf(bits, tail_size=3 * 64 * 1024)
-                    # Level zero leaves literal tail bytes in deflate blocks, so
-                    # this changes payload without making the deflate stream invalid.
-                    start, size = self.write_apk(
-                        data, compression, aligned=False, compresslevel=0,
-                    )
+                    self.write_apk(data, compression, aligned=False)
+                    # Keep deflate bytes valid across zlib versions. A wrong
+                    # expected checksum must still be detected only at EOF.
+                    with zipfile.ZipFile(self.apk) as apk:
+                        info = apk.getinfo(self.member)
+                        checksum = struct.pack("<I", info.CRC ^ 1)
+                        checksum_offsets = (info.header_offset + 14, apk.start_dir + 16)
                     with self.apk.open("r+b") as archive:
-                        archive.seek(start + size - 1)
-                        value = archive.read(1)[0]
-                        archive.seek(-1, 1)
-                        archive.write(bytes((value ^ 1,)))
+                        for offset in checksum_offsets:
+                            archive.seek(offset)
+                            archive.write(checksum)
                     with self.assertRaisesRegex(zipfile.BadZipFile, "Bad CRC-32"):
                         self.run_checker()
 
