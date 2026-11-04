@@ -1,0 +1,6 @@
+# Paths are resolved relative to this file. Remote modules need a pinned version.
+extensions:
+  - package: example.org/wgc-ne-counter/register
+    module: example.org/wgc-ne-counter
+    version: v0.0.0
+    path: counter

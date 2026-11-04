@@ -1,0 +1,7 @@
+* text=auto eol=lf
+third_party/licenses/** -whitespace
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.woff2 binary

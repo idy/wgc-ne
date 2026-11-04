@@ -1,0 +1,24 @@
+name: wgc_ne
+description: Flutter control API and Apple Network Extension SDK for WGC tunnels.
+version: 0.1.0
+homepage: https://wgc-ne.idy.dev
+repository: https://github.com/idy/wgc-ne
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.19.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  yaml: ^3.1.3
+  path: ^1.9.1
+dev_dependencies:
+  fake_async: ^1.3.3
+  flutter_test:
+    sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: WgcNePlugin
+      macos:
+        pluginClass: WgcNePlugin

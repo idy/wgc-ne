@@ -1,0 +1,13 @@
+name: wgc_ne_example
+description: Minimal consumer of the WGC NE Apple Network Extension plugin.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  wgc_ne:
+    path: ../
+flutter:
+  uses-material-design: true

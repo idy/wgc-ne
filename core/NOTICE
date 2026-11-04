@@ -1,0 +1,10 @@
+WGC NE
+Copyright (C) 2026 idy and contributors
+SPDX-License-Identifier: GPL-3.0-or-later
+
+This project uses WGC (github.com/idy/wgc) under the MIT license and
+sing-box (github.com/sagernet/sing-box) under GPL-3.0-or-later and its
+upstream notice. Dependency terms remain applicable. WGC NE is not an
+official WireGuard or sing-box application and implies no affiliation.
+
+See LICENSE and THIRD_PARTY_NOTICES.md.

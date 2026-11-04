@@ -1,0 +1,4 @@
+module WGCCore {
+  header "WGCCore.h"
+  export *
+}

@@ -1,0 +1,22 @@
+PODS:
+  - Flutter (1.0.0)
+  - wgc_ne (0.1.0):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - wgc_ne (from `.symlinks/plugins/wgc_ne/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  wgc_ne:
+    :path: ".symlinks/plugins/wgc_ne/ios"
+
+SPEC CHECKSUMS:
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  wgc_ne: 0005c3fa5418270212b4195f17c7457676dc9ac7
+
+PODFILE CHECKSUM: 3ba3a73b1b12adcf321a227a745625fe0888cc82
+
+COCOAPODS: 1.17.0

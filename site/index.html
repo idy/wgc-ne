@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F3F6FB" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101A29" media="(prefers-color-scheme: dark)">
+  <title>WGC NE — Flutter control. Native packet path.</title>
+  <meta name="description" content="An independent Flutter plugin and Apple Network Extension SDK. sing-box handles IP flows, WGC handles WireGuard packets, and your Go core owns the transport.">
+  <link rel="canonical" href="https://wgc-ne.idy.dev/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="WGC NE — Flutter control. Native packet path.">
+  <meta property="og:description" content="A Flutter plugin and Go SDK for an Apple PacketTunnel extension you embed and sign. Explore the transport boundary.">
+  <meta property="og:url" content="https://wgc-ne.idy.dev/">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./script.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="WGC NE home">
+        <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+          <path d="M3 20h9m16 0h9M12 10v20h7V10h-7Zm9 0v20h7V10h-7Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M16 16h8m-8 8h8" fill="none" stroke="currentColor" stroke-width="2.5"/>
+        </svg>
+        <span>WGC <span class="brand-ne">NE</span></span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="#architecture">Architecture</a>
+        <a href="#transport">Transport</a>
+        <a href="#integration">Integration</a>
+        <a class="source-link" href="https://github.com/idy/wgc-ne">GitHub <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3h8v8M13 3 3 13"/></svg></a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-heading">
+          <p class="product-kind">Flutter plugin + Apple Network Extension SDK</p>
+          <h1 id="page-title">Flutter control.<br>Native packet path.</h1>
+        </div>
+        <div class="hero-copy">
+          <p class="hero-intro">A tunnel for the app you own, with a transport you can replace.</p>
+          <p>WGC NE connects your Flutter app to its own PacketTunnel extension. sing-box handles IP flows in Go. WGC handles authenticated WireGuard packets.</p>
+          <a class="text-link" href="https://github.com/idy/wgc-ne#readme">Read the project README <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3h8v8M13 3 3 13"/></svg></a>
+        </div>
+        <div class="preview-note">
+          <span class="release-label"><span class="status-square" aria-hidden="true"></span>First release / API preview</span>
+          <p>Builder and Dart APIs may change. Use the <a href="https://github.com/idy/wgc-ne/blob/HEAD/docs/architecture.md">architecture document</a> for the current contract.</p>
+        </div>
+      </section>
+
+      <section class="architecture-section" id="architecture" aria-labelledby="architecture-title">
+        <div class="section-heading diagram-heading">
+          <h2 id="architecture-title">See where your transport plugs in.</h2>
+          <p>Select a stage to inspect the boundary.</p>
+        </div>
+
+        <div class="runtime-board" id="runtime-board" data-transport="udp">
+          <div class="board-toolbar">
+            <p>Control and packet flow</p>
+            <div class="flow-legend" aria-label="Diagram legend">
+              <span><i class="legend-control" aria-hidden="true"></i>Control call</span>
+              <span><i class="legend-packet" aria-hidden="true"></i>IP / packet path</span>
+            </div>
+          </div>
+
+          <div class="runtime-map">
+            <div class="app-region">
+              <div class="process-heading">
+                <h3>Containing app</h3>
+                <p>Flutter engine lives here</p>
+              </div>
+              <button class="stage stage-flutter" type="button" data-stage="flutter" aria-pressed="true" disabled>
+                <span class="stage-port">
+                  <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="m8 17 12-12h7L12 20m0 0 8 8h7L16 17m4 3 7-7h-7l-4 4"/></svg>
+                </span>
+                <span class="stage-name">Flutter</span>
+                <span class="stage-meta">Profile + status</span>
+              </button>
+            </div>
+
+            <div class="provider-region">
+              <div class="process-heading provider-heading">
+                <h3>Your PacketTunnel extension</h3>
+                <p>Embedded and signed by your app</p>
+                <span class="process-tag">Swift + Go</span>
+              </div>
+              <div class="native-stages">
+                <button class="stage stage-ne" type="button" data-stage="ne" aria-pressed="false" disabled>
+                  <span class="stage-port">
+                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="5" y="6" width="22" height="20" rx="3"/><path d="M5 13h22M12 19h8m-4-3v6"/></svg>
+                  </span>
+                  <span class="stage-name">NetworkExtension</span>
+                  <span class="stage-meta">TUN + Swift provider</span>
+                </button>
+                <button class="stage stage-singbox" type="button" data-stage="singbox" aria-pressed="false" disabled>
+                  <span class="stage-port">
+                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M7 16h9m0 0V8h8m-8 8v8h8"/><circle cx="6" cy="16" r="2"/><circle cx="25" cy="8" r="2"/><circle cx="25" cy="24" r="2"/></svg>
+                  </span>
+                  <span class="stage-name">sing-box <small>1.14.4</small></span>
+                  <span class="stage-meta">TCP / UDP / DNS</span>
+                </button>
+                <button class="stage stage-wgc" type="button" data-stage="wgc" aria-pressed="false" disabled>
+                  <span class="stage-port">
+                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="m16 4 10 4v9c0 5-6 9-10 11C12 26 6 22 6 17V8l10-4Z"/><path d="M11 13h10m-10 6h10m-5-6v6"/></svg>
+                  </span>
+                  <span class="stage-name">WGC <small>0.2.0</small></span>
+                  <span class="stage-meta">WireGuard packets</span>
+                </button>
+                <button class="stage stage-transport" type="button" data-stage="transport" aria-pressed="false" disabled>
+                  <span class="stage-port port-transport">
+                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M3 11h7m-7 10h7m0-14h14v18H10V7Zm14 9h5"/><path class="udp-symbol" d="M15 12h4m-4 8h4"/><path class="custom-symbol" d="m15 11-3 5 3 5m5-10 3 5-3 5"/></svg>
+                  </span>
+                  <span class="stage-name" id="transport-name">Standard UDP</span>
+                  <span class="stage-meta" id="transport-meta">Included adapter</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="transport-dock">
+            <fieldset class="transport-choice" id="transport-choice" disabled>
+              <legend>Transport socket</legend>
+              <div class="transport-options">
+                <label class="transport-option">
+                  <input type="radio" name="transport" value="udp" checked>
+                  <span>Standard UDP</span>
+                </label>
+                <label class="transport-option">
+                  <input type="radio" name="transport" value="custom">
+                  <span>Your Go wrapper</span>
+                </label>
+              </div>
+            </fieldset>
+            <div class="socket-value">
+              <span id="socket-caption">Shipped in the SDK</span>
+              <code id="socket-config">{"type":"udp","options":{}}</code>
+            </div>
+          </div>
+
+          <div class="flow-detail" aria-live="polite" aria-atomic="true">
+            <div class="detail-position">
+              <span id="flow-owner">App process</span>
+              <span class="stage-counter" id="flow-position">Stage 1 of 5</span>
+            </div>
+            <div class="detail-copy">
+              <h3 id="flow-title">Flutter owns the controls.</h3>
+              <p id="flow-description">The plugin controls an owned NETunnelProviderManager through native code and reads status through provider messages. Packet data does not pass through the Flutter engine.</p>
+            </div>
+            <button class="step-button" id="flow-next" type="button" hidden>Next stage <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m6 4 4 4-4 4"/></svg></button>
+          </div>
+        </div>
+        <p class="diagram-footnote">Outbound direction shown. This is an interactive architecture schematic; it sends no network traffic.</p>
+        <noscript><p class="noscript-note">JavaScript enables stage selection and transport switching. The architecture, interface, and configuration remain readable below.</p></noscript>
+      </section>
+
+      <section class="reference-section transport-section" id="transport" aria-labelledby="transport-title">
+        <div class="section-copy">
+          <p class="section-context">The transport boundary</p>
+          <h2 id="transport-title">Three methods.<br>Your packet carrier.</h2>
+          <p>The Go core depends on <a href="https://github.com/idy/wgc/tree/v0.2.0">WGC v0.2.0</a>. Its transport interface exchanges WireGuard messages with remote endpoints.</p>
+          <p class="scope-note">Only standard UDP ships. Your private authentication, relaying, framing, or obfuscation belongs in a wrapper compiled into your Go core.</p>
+          <a class="text-link" href="https://wgc.idy.dev">Explore the WGC project <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3h8v8M13 3 3 13"/></svg></a>
+        </div>
+        <div class="contract">
+          <div class="code-panel">
+            <div class="code-header">
+              <a href="https://github.com/idy/wgc/blob/v0.2.0/transport.go">wgc / transport.go</a>
+              <div class="code-tools"><span>Go</span><button class="copy-button" type="button" data-copy="transport-code" hidden>Copy</button></div>
+            </div>
+            <pre tabindex="0" aria-label="WGC v0.2.0 Transport interface"><code id="transport-code"><span class="code-keyword">import</span> <span class="code-string">"net/netip"</span>
+
+<span class="code-keyword">type</span> Transport <span class="code-keyword">interface</span> {
+    ReadFrom(b []<span class="code-type">byte</span>) (<span class="code-type">int</span>, netip.AddrPort, <span class="code-type">error</span>)
+    WriteTo(b []<span class="code-type">byte</span>, addr netip.AddrPort) (<span class="code-type">int</span>, <span class="code-type">error</span>)
+    Close() <span class="code-type">error</span>
+}</code></pre>
+          </div>
+          <dl class="contract-rules">
+            <div><dt>Concurrency</dt><dd>One reader and concurrent writers.</dd></div>
+            <div><dt>Buffers</dt><dd>Do not retain them after a method returns.</dd></div>
+            <div><dt>Lifecycle</dt><dd>Close unblocks pending I/O.</dd></div>
+          </dl>
+          <p class="reference-note">Register custom factories in your extension’s core. Flutter selects a registered name and JSON options; unknown names fail closed.</p>
+        </div>
+      </section>
+
+      <section class="configuration-section" id="configuration" aria-labelledby="configuration-title">
+        <div class="section-heading configuration-heading">
+          <div>
+            <p class="section-context">Configuration version 1</p>
+            <h2 id="configuration-title">An explicit contract, in JSON.</h2>
+          </div>
+          <a class="text-link" href="https://github.com/idy/wgc-ne/blob/HEAD/docs/architecture.md">Read the schema and defaults <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3h8v8M13 3 3 13"/></svg></a>
+        </div>
+        <div class="configuration-layout">
+          <div class="code-panel config-panel">
+            <div class="code-header">
+              <span>Standard UDP configuration</span>
+              <div class="code-tools"><span>JSON</span><button class="copy-button" type="button" data-copy="config-code" hidden>Copy</button></div>
+            </div>
+            <pre tabindex="0" aria-label="Documented version 1 configuration example"><code id="config-code">{
+  <span class="code-key">"version"</span>: <span class="code-number">1</span>,
+  <span class="code-key">"private_key"</span>: <span class="code-string">"&lt;canonical Base64 X25519 private key&gt;"</span>,
+  <span class="code-key">"addresses"</span>: [<span class="code-string">"10.7.0.2/32"</span>],
+  <span class="code-key">"peers"</span>: [{
+    <span class="code-key">"id"</span>: <span class="code-string">"exit"</span>,
+    <span class="code-key">"public_key"</span>: <span class="code-string">"&lt;canonical Base64 X25519 public key&gt;"</span>,
+    <span class="code-key">"endpoint"</span>: <span class="code-string">"203.0.113.10:51820"</span>
+  }],
+  <span class="code-key">"default_peer"</span>: <span class="code-string">"exit"</span>,
+  <span class="code-key">"transport"</span>: {<span class="code-key">"type"</span>: <span class="code-string">"udp"</span>, <span class="code-key">"options"</span>: {}},
+  <span class="code-key">"mtu"</span>: <span class="code-number">1280</span>,
+  <span class="code-key">"dns_server"</span>: <span class="code-string">"1.1.1.1:53"</span>,
+  <span class="code-key">"network"</span>: {
+    <span class="code-key">"dns_servers"</span>: [<span class="code-string">"198.18.0.2"</span>],
+    <span class="code-key">"included_routes"</span>: [<span class="code-string">"0.0.0.0/0"</span>],
+    <span class="code-key">"excluded_routes"</span>: []
+  }
+}</code></pre>
+          </div>
+          <div class="config-explanation">
+            <p class="example-note">An example from the architecture document. Replace the key placeholders and use addresses allowed by your remote WireGuard server.</p>
+            <dl class="config-notes">
+              <div>
+                <dt>Required inputs</dt>
+                <dd><code>version</code>, <code>private_key</code>, <code>addresses</code>, and <code>peers</code>. Endpoints and resolvers must be numeric and unzoned.</dd>
+              </div>
+              <div>
+                <dt>Platform owns the routes</dt>
+                <dd>NetworkExtension installs network settings. The core adds each peer’s outer endpoint host route to the exclusions.</dd>
+              </div>
+              <div>
+                <dt>Credentials stay on device</dt>
+                <dd>Configuration goes into a device-only Keychain item in your shared access group. Preferences hold a profile reference, not private keys or full configuration.</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+        <div class="singbox-scope">
+          <div><h3>sing-box, with a defined scope.</h3><p>The default policy sends TUN TCP/UDP and DNS through the selected peer. Raw ICMP forwarding is outside the userspace outbound’s stated scope.</p></div>
+          <div class="registrations"><p>Built-in registrations in this SDK</p><ul><li>TUN</li><li>direct</li><li>WGC</li><li>UDP/TCP DNS</li><li>FakeIP DNS</li></ul></div>
+        </div>
+      </section>
+
+      <section class="integration-section" id="integration" aria-labelledby="integration-title">
+        <div class="section-copy">
+          <p class="section-context">Integration ownership</p>
+          <h2 id="integration-title">Your app ships<br>its own extension.</h2>
+          <p>Share the SDK and native ABI. Each containing app embeds and signs its own PacketTunnel target and keeps its own VPN identity.</p>
+          <div class="integration-links">
+            <a class="primary-link" href="https://github.com/idy/wgc-ne#readme">Start with the README <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3h8v8M13 3 3 13"/></svg></a>
+            <a class="text-link" href="https://github.com/idy/wgc-ne/blob/HEAD/docs/architecture.md">Architecture and contracts</a>
+          </div>
+        </div>
+        <dl class="ownership-list">
+          <div>
+            <dt>Containing app</dt>
+            <dd>Own the UI, accounts, API integrations, and policy. Use the Flutter plugin to manage your native profile and read status.</dd>
+          </div>
+          <div>
+            <dt>PacketTunnel target</dt>
+            <dd>Run Swift and Go, without a Flutter engine. Link your chosen <code>WGCCore.xcframework</code>; set the NetworkExtension and matching shared Keychain entitlements.</dd>
+          </div>
+          <div>
+            <dt>Custom Go core</dt>
+            <dd>Compile private transport factories and wrappers into this binary. A transport name in JSON selects code already registered in your build.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <div class="project-note">
+        <span class="release-label"><span class="status-square" aria-hidden="true"></span>Build against the current contract</span>
+        <p>This first release is an API preview. Follow the repository for the current builder and Dart integration; their public surface may change.</p>
+      </div>
+      <p class="copy-status visually-hidden" id="copy-status" role="status" aria-live="polite"></p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-project"><a class="footer-name" href="https://github.com/idy/wgc-ne">WGC NE</a><p>An independent project. Not an official WireGuard or sing-box application.</p></div>
+      <div class="footer-license"><p>GPL-3.0-or-later</p><p>Preserve WGC’s MIT attribution and sing-box’s license and notices. Dependency licenses continue to apply.</p></div>
+      <nav class="footer-nav" aria-label="Project resources"><a href="https://github.com/idy/wgc-ne">Source</a><a href="https://github.com/idy/wgc-ne#readme">README</a><a href="https://github.com/idy/wgc-ne/blob/HEAD/docs/architecture.md">Architecture</a><a href="https://wgc.idy.dev">WGC project</a></nav>
+    </footer>
+  </div>
+</body>
+</html>
