@@ -16,7 +16,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 const SingBoxVersion = "1.14.4"
 const MaxConfigBytes = 128 << 10
 

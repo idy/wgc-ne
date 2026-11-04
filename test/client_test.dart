@@ -66,6 +66,39 @@ void main() {
     await api.dispose();
   });
 
+  test('Android client sends no Apple identifiers and maps denied consent',
+      () async {
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (call.method == 'start') {
+        throw PlatformException(
+            code: 'permission_denied', message: 'private detail');
+      }
+      return {'state': 'disconnected'};
+    });
+    final api =
+        WgcNe.android(channel: channel, localizedDescription: 'Test VPN');
+    final configuration = WgcConfiguration.fromJson(configurationJson());
+    await expectLater(api.start(configuration),
+        throwsA(isFailure(WgcErrorCode.permissionDenied)));
+    await api.status();
+    await api.stop();
+    await api.removeProfile();
+    expect(calls.first.arguments, {
+      'configuration': configuration.toJsonString(),
+      'localizedDescription': 'Test VPN',
+    });
+    for (final call in calls.skip(1)) {
+      expect(call.arguments, isEmpty);
+    }
+    await api.dispose();
+    expect(() => WgcNe.android(localizedDescription: ''),
+        throwsA(isFailure(WgcErrorCode.invalidArguments)));
+    expect(() => WgcNe.android(requestTimeout: Duration.zero),
+        throwsA(isFailure(WgcErrorCode.invalidArguments)));
+  });
+
   test('native errors and unknown replies are redacted', () async {
     const secret = 'sensitive-native-error-detail';
     messenger.setMockMethodCallHandler(channel, (_) async {

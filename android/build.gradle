@@ -1,0 +1,45 @@
+group 'dev.idy.wgcne'
+version '0.2.0'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.2'
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'dev.idy.wgcne'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 23
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets {
+        main.jniLibs.srcDirs += project.findProperty('wgcNeCoreDirectory') ?: 'src/main/jniLibs'
+    }
+    testOptions {
+        unitTests.includeAndroidResources = true
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'org.mockito:mockito-core:5.16.1'
+}

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:wgc_ne/wgc_ne.dart';
@@ -55,10 +56,12 @@ class _TunnelPageState extends State<TunnelPage> {
         old.keychainAccessGroup == group) {
       return old;
     }
-    final client = WgcNe(
-        providerBundleIdentifier: provider,
-        keychainAccessGroup: group,
-        localizedDescription: 'WGC NE example');
+    final client = Platform.isAndroid
+        ? WgcNe.android(localizedDescription: 'WGC NE example')
+        : WgcNe(
+            providerBundleIdentifier: provider,
+            keychainAccessGroup: group,
+            localizedDescription: 'WGC NE example');
     await _subscription?.cancel();
     await old?.dispose();
     _client = client;
@@ -135,29 +138,32 @@ class _TunnelPageState extends State<TunnelPage> {
                     Text('Connect your tunnel',
                         style: Theme.of(context).textTheme.headlineMedium),
                     const SizedBox(height: 12),
-                    const Text(
-                        'Use the identifiers of your embedded PacketTunnel extension and shared Keychain group. Both targets need the corresponding entitlements.'),
+                    Text(Platform.isAndroid
+                        ? 'Android will request VPN permission and show a notification while connected.'
+                        : 'Use the identifiers of your embedded PacketTunnel extension and shared Keychain group. Both targets need the corresponding entitlements.'),
                     const SizedBox(height: 24),
-                    TextField(
-                      controller: _provider,
-                      enabled: !_busy && !_active,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: const InputDecoration(
-                          labelText: 'Provider bundle identifier',
-                          hintText: 'com.yourcompany.app.tunnel'),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _group,
-                      enabled: !_busy && !_active,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: const InputDecoration(
-                          labelText: 'Shared Keychain access group',
-                          hintText: 'TEAMID.com.yourcompany.shared'),
-                    ),
-                    const SizedBox(height: 16),
+                    if (!Platform.isAndroid) ...[
+                      TextField(
+                        controller: _provider,
+                        enabled: !_busy && !_active,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: const InputDecoration(
+                            labelText: 'Provider bundle identifier',
+                            hintText: 'com.yourcompany.app.tunnel'),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _group,
+                        enabled: !_busy && !_active,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: const InputDecoration(
+                            labelText: 'Shared Keychain access group',
+                            hintText: 'TEAMID.com.yourcompany.shared'),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     TextField(
                       controller: _configuration,
                       enabled: !_busy && !_active,
@@ -166,11 +172,12 @@ class _TunnelPageState extends State<TunnelPage> {
                       autocorrect: false,
                       enableSuggestions: false,
                       keyboardType: TextInputType.multiline,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                           labelText: 'Configuration JSON',
                           alignLabelWithHint: true,
-                          helperText:
-                              'Contains your private key. It is stored in the shared device-only Keychain.'),
+                          helperText: Platform.isAndroid
+                              ? 'Contains your private key. Kept in app/service memory, not saved to disk.'
+                              : 'Contains your private key. It is stored in the shared device-only Keychain.'),
                     ),
                     const SizedBox(height: 24),
                     Semantics(

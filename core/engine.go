@@ -16,7 +16,7 @@ import (
 type Engine struct {
 	box      *box.Box
 	session  *Session
-	platform *applePlatform
+	platform *suppliedTUNPlatform
 	cancel   context.CancelFunc
 	done     chan struct{}
 	once     sync.Once
@@ -27,20 +27,29 @@ func transportRegistryValidate(config Config) error {
 	return transport.Default.Validate(config.Transport)
 }
 
-// Open takes ownership of fd on EVERY path. The host must pass a duplicate of
-// its own NetworkExtension utun descriptor and install validated settings first.
-func Open(ctx context.Context, fd int, config Config, options SessionOptions) (_ *Engine, err error) {
-	platform := &applePlatform{fd: fd}
+// Open takes ownership of fd on EVERY path. The host installs validated VPN
+// settings first, then transfers an Apple utun or Android VpnService TUN fd.
+// Android requires transport.WithSocketProtector on ctx before opening any
+// sockets. The caller must keep its protector alive until the engine closes.
+func Open(ctx context.Context, fd int, config Config, options SessionOptions) (*Engine, error) {
+	return openForPlatform(ctx, fd, config, options, runtime.GOOS)
+}
+
+func openForPlatform(ctx context.Context, fd int, config Config, options SessionOptions, goos string) (_ *Engine, err error) {
+	platform := &suppliedTUNPlatform{fd: fd, android: goos == "android", ctx: ctx}
 	defer func() {
 		if err != nil {
 			platform.Close()
 		}
 	}()
-	if runtime.GOOS != "darwin" && runtime.GOOS != "ios" {
-		return nil, errors.New("NetworkExtension requires an Apple platform")
+	if goos != "darwin" && goos != "ios" && goos != "android" {
+		return nil, errors.New("a supplied TUN requires an Apple or Android platform")
 	}
 	if fd < 0 {
 		return nil, errors.New("owned TUN descriptor required")
+	}
+	if platform.android && !transport.HasSocketProtector(ctx) {
+		return nil, transport.ErrSocketProtectorRequired
 	}
 	config, err = NormalizeConfig(config)
 	if err != nil {
@@ -51,6 +60,7 @@ func Open(ctx context.Context, fd int, config Config, options SessionOptions) (_
 		debug.SetGCPercent(25)
 	}
 	runCtx, cancel := context.WithCancel(ctx)
+	platform.ctx = runCtx
 	defer func() {
 		if err != nil {
 			cancel()
@@ -89,6 +99,10 @@ func Open(ctx context.Context, fd int, config Config, options SessionOptions) (_
 	return engine, nil
 }
 func (e *Engine) Status() Status { return e.session.Status() }
+
+// Done closes after all engine resources have been closed, including the TUN.
+func (e *Engine) Done() <-chan struct{} { return e.done }
+
 func (e *Engine) Close() error {
 	e.once.Do(func() { e.cancel(); e.err = e.box.Close(); _ = e.session.Close(); e.platform.Close(); close(e.done) })
 	return e.err

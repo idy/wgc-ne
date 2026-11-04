@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Android API 23+ support through an app-owned foreground `VpnService`, JNI,
+  protected native sockets, and `WgcNe.android`.
+- Consent-result handling, serialized startup/shutdown, independent core health
+  polling, and memory-only Android configuration.
+- Android NDK core builds with compiled transport extensions, multiple ABIs,
+  16 KiB alignment checks, example packaging, and platform regression tests.
+
 ## 0.1.0
 
 Initial preview API:

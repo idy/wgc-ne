@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'configuration.dart';
 import 'status.dart';
 
-/// A client for one containing app's provider. Dispose it when its owner is closed.
+/// Controls the app's native tunnel. Dispose it when its owner is closed.
 final class WgcNe {
   WgcNe({
     required this.providerBundleIdentifier,
@@ -14,7 +14,8 @@ final class WgcNe {
     this.pollingInterval = const Duration(seconds: 1),
     this.requestTimeout = const Duration(seconds: 45),
     MethodChannel? channel,
-  }) : _channel = channel ?? const MethodChannel('dev.idy.wgc_ne/methods') {
+  })  : _android = false,
+        _channel = channel ?? const MethodChannel('dev.idy.wgc_ne/methods') {
     if (!_identifier(providerBundleIdentifier) ||
         !_identifier(keychainAccessGroup) ||
         (localizedDescription != null &&
@@ -28,8 +29,32 @@ final class WgcNe {
     }
   }
 
+  /// Controls Android's app-owned VpnService. Call start from a visible Activity
+  /// so the plugin can request system VPN consent and start its foreground service.
+  WgcNe.android({
+    this.localizedDescription,
+    this.pollingInterval = const Duration(seconds: 1),
+    this.requestTimeout = const Duration(seconds: 45),
+    MethodChannel? channel,
+  })  : providerBundleIdentifier = '',
+        keychainAccessGroup = '',
+        _android = true,
+        _channel = channel ?? const MethodChannel('dev.idy.wgc_ne/methods') {
+    if ((localizedDescription != null &&
+            (localizedDescription!.isEmpty ||
+                localizedDescription!.length > 255)) ||
+        pollingInterval < const Duration(milliseconds: 100) ||
+        pollingInterval > const Duration(minutes: 1) ||
+        requestTimeout <= Duration.zero ||
+        requestTimeout > const Duration(minutes: 2)) {
+      throw const WgcException(WgcErrorCode.invalidArguments);
+    }
+  }
+
+  /// Apple identifiers; empty for [WgcNe.android].
   final String providerBundleIdentifier;
   final String keychainAccessGroup;
+  final bool _android;
   final String? localizedDescription;
   final Duration pollingInterval;
   final Duration requestTimeout;
@@ -55,8 +80,8 @@ final class WgcNe {
   }
 
   Future<WgcStatus> start(WgcConfiguration configuration) => _invoke('start', {
-        'providerBundleIdentifier': providerBundleIdentifier,
-        'keychainAccessGroup': keychainAccessGroup,
+        ..._providerArguments,
+        if (!_android) 'keychainAccessGroup': keychainAccessGroup,
         'configuration': configuration.toJsonString(),
         if (localizedDescription != null)
           'localizedDescription': localizedDescription,
@@ -64,7 +89,8 @@ final class WgcNe {
 
   Future<WgcStatus> stop() => _invoke('stop', _providerArguments);
 
-  /// Invoke only in response to an explicit user action.
+  /// Invoke only in response to an explicit user action. On Android this stops
+  /// the memory-only session; system VPN consent remains until revoked in Settings.
   Future<WgcStatus> removeProfile() =>
       _invoke('removeProfile', _providerArguments);
 
@@ -92,7 +118,7 @@ final class WgcNe {
   }
 
   Map<String, Object?> get _providerArguments =>
-      {'providerBundleIdentifier': providerBundleIdentifier};
+      _android ? {} : {'providerBundleIdentifier': providerBundleIdentifier};
 
   Future<WgcStatus> _invoke(String method, Map<String, Object?> arguments) {
     if (_disposed) {

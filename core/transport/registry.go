@@ -169,7 +169,7 @@ func openUDP(ctx context.Context, raw json.RawMessage) (wgc.Transport, error) {
 	if address == "" {
 		address = ":0"
 	}
-	listener := net.ListenConfig{}
+	listener := net.ListenConfig{Control: SocketControl(ctx)}
 	conn, err := listener.ListenPacket(ctx, "udp", address)
 	if err != nil {
 		return nil, errors.New("cannot open UDP transport")

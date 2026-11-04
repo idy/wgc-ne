@@ -25,6 +25,7 @@ import (
 )
 
 func boxContext(ctx context.Context, config Config, session *Session) context.Context {
+	ctx = protectedBoxContext(ctx)
 	inputs, outputs := inbound.NewRegistry(), outbound.NewRegistry()
 	tun.RegisterInbound(inputs)
 	direct.RegisterOutbound(outputs)
@@ -88,7 +89,7 @@ func parseBoxConfig(ctx context.Context, config Config) (option.Options, error) 
 			return options, errors.New("invalid TUN configuration")
 		}
 		if value.AutoRoute || value.AutoRedirect {
-			return options, errors.New("NetworkExtension owns route installation")
+			return options, errors.New("the host VPN owns route installation")
 		}
 		if value.MTU != config.MTU || len(value.Address) != len(config.Addresses) {
 			return options, errors.New("TUN addresses and MTU must match network settings")

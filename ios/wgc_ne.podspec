@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = 'wgc_ne'
-  s.version = '0.1.0'
+  s.version = '0.2.0'
   s.summary = 'WGC Apple Network Extension control for Flutter.'
   s.description = 'Shared Keychain configuration and owned VPN profile lifecycle for WGC tunnels.'
   s.homepage = 'https://github.com/idy/wgc-ne'

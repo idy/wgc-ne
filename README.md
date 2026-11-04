@@ -1,11 +1,12 @@
 # WGC NE
 
-A Flutter plugin and Apple Network Extension SDK for applications that want
+A Flutter plugin and native Android/Apple SDK for applications that want
 WireGuard sessions with an application-owned transport. The Flutter plugin
-supports iOS and macOS; Android is not implemented.
+supports Android 6.0+ (API 23), iOS, and macOS.
 
-[Project page](https://wgc-ne.idy.dev/) · [Apple integration](docs/apple-integration.md) ·
-[Custom transports](docs/transports.md) · [Architecture and ABI](docs/architecture.md)
+[Project page](https://wgc-ne.idy.dev/) · [Android integration](docs/android-integration.md) ·
+[Apple integration](docs/apple-integration.md) · [Custom transports](docs/transports.md) ·
+[Architecture and ABI](docs/architecture.md)
 
 WGC NE uses [WGC](https://github.com/idy/wgc) for peer admission, WireGuard
 handshakes, encryption, and replay protection. sing-box handles TUN flows,
@@ -37,6 +38,11 @@ The extension runs Swift and Go, without a Flutter engine. Every app embeds and
 signs its own extension. Shared code does not mean sharing another app's running
 provider, signing identity, or Keychain data.
 
+On Android, the same core runs in the application's foreground `VpnService`.
+The plugin handles VPN consent; JNI transfers a service-owned TUN descriptor
+and protects native sockets from routing back through the VPN. Configuration
+stays in memory, and process death requires an explicit reconnect.
+
 ## Get started
 
 Use the repository as a Flutter Git dependency. A pub.dev publication is not
@@ -47,10 +53,21 @@ dependencies:
   wgc_ne:
     git:
       url: https://github.com/idy/wgc-ne.git
-      ref: v0.1.0
+      ref: v0.2.0
 ```
 
-Build a core on macOS with Xcode and Go 1.26 or newer:
+For Android, build with Go 1.26+ and NDK r28+ on macOS or Linux:
+
+```bash
+dart run wgc_ne:build_core --platform android --output android/app/src/main/jniLibs
+```
+
+Set `ANDROID_HOME` with NDK `28.2.13676358` installed, or pass `--ndk`. Start with
+`WgcNe.android(localizedDescription: 'My VPN')`; the remaining Dart operations
+match the Apple API. Follow [Android integration](docs/android-integration.md)
+for packaging, permissions, and custom socket protection.
+
+For Apple, build a core on macOS with Xcode and Go 1.26 or newer:
 
 ```bash
 dart run wgc_ne:build_core --platform ios --output build/WGCCore.xcframework
@@ -82,7 +99,7 @@ await tunnel.dispose();
 ```
 
 Use `tunnel.statuses` for subscription-scoped status updates. `connected` means
-the Apple provider and local core started; it does not prove a remote peer is
+the native provider/service and local core started; it does not prove a remote peer is
 reachable or that the internet is working. Never log configuration JSON.
 
 The [example app](example/) is a small consumer for your own synthetic/test
@@ -98,7 +115,7 @@ with `core/transport.RegisterFactory` or `RegisterWrapper`, list its package in
 dart run wgc_ne:build_core --platform ios --config wgc_ne.core.yaml
 ```
 
-The selected transport is created **inside the extension process**. Dart sends
+The selected transport is created **inside the native tunnel runtime**. Dart sends
 only the registered name and JSON options; it is not a per-packet callback.
 Unknown registrations fail instead of falling back to UDP. The included
 [counter wrapper example](example/counter/register/register.go) demonstrates
@@ -118,11 +135,12 @@ addresses. The default routes TCP/UDP and DNS through one selected WGC peer.
 
 Optional custom sing-box JSON supports the registered TUN, direct, WGC, UDP/TCP
 DNS, and FakeIP components. This is not a bundle of every sing-box protocol.
-NetworkExtension owns the OS routes; sing-box automatic route installation is
+The native platform owns the OS routes; sing-box automatic route installation is
 rejected. Raw ICMP forwarding is not provided by the userspace WGC outbound.
 
-Configuration is stored in a device-only shared Keychain item. NetworkExtension
-preferences hold a reference, not the private key. Status exposes public identity
+On Apple, configuration is stored in a device-only shared Keychain item and
+NetworkExtension preferences hold only a reference. On Android, it stays in
+service memory without automatic process recovery. Status exposes public identity
 and counters only. The host application remains responsible for peer trust,
 account authorization, configuration provenance, and key lifecycle.
 

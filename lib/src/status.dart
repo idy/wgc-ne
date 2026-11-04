@@ -101,7 +101,7 @@ int _counter(Object? value) {
 
 enum WgcErrorCode {
   invalidArguments(
-      'invalid_arguments', 'The provider or Keychain identifiers are invalid.'),
+      'invalid_arguments', 'The tunnel client arguments are invalid.'),
   invalidConfiguration(
       'invalid_configuration', 'The tunnel configuration is invalid.'),
   invalidProfile(
@@ -117,7 +117,8 @@ enum WgcErrorCode {
   providerUnavailable(
       'provider_unavailable', 'The tunnel provider is unavailable.'),
   coreUnavailable('core_unavailable',
-      'A compatible tunnel core must be supplied by the extension.'),
+      'A compatible native tunnel core must be supplied by the application.'),
+  permissionDenied('permission_denied', 'VPN permission was not granted.'),
   coreFailure(
       'core_failure', 'The tunnel core could not complete the operation.'),
   invalidResponse(
@@ -128,7 +129,7 @@ enum WgcErrorCode {
   cancelled('cancelled', 'The tunnel operation was cancelled.'),
   disposed('disposed', 'This tunnel client has been disposed.'),
   unsupportedPlatform('unsupported_platform',
-      'WGC NE requires an Apple host with the native plugin installed.'),
+      'WGC NE requires Android, iOS, or macOS with the native plugin installed.'),
   internalError(
       'internal_error', 'The tunnel operation could not be completed.');
 

@@ -1,6 +1,7 @@
 # Contributing
 
-Use Go 1.26+, Flutter/Dart, and Xcode on macOS for Apple builds. Keep changes to
+Use Go 1.26+ and Flutter/Dart. Apple builds need Xcode on macOS; Android builds
+need JDK 17, Android SDK 36, and NDK r28+ on macOS or Linux. Keep changes to
 public generic networking and platform integration; application-specific account
 services and private transports belong in their consuming projects.
 
@@ -33,8 +34,21 @@ under `apple/Sources/WGCNE`, and the example links the canonical Go adapter unde
 `apple/GoAdapter`. Keep those links in sync when adding a Swift file;
 `python3 -I tool/check_native_sources.py` verifies the shared sources.
 
-See `docs/apple-integration.md` for native integration and `docs/transports.md`
-for custom-core builds. Tests must use synthetic keys and loopback/local stacks;
+See `docs/apple-integration.md` and `docs/android-integration.md` for native
+integration and `docs/transports.md` for custom-core builds. Android checks:
+
+```bash
+./example/android/gradlew -p example/android :wgc_ne:testDebugUnitTest
+```
+
+```bash
+python3 -I tool/check_android_artifacts.py --jni-libs example/android/app/src/main/jniLibs --apk example/build/app/outputs/flutter-apk/app-release.apk
+```
+
+Build the Android core and example APK as described in the integration guide
+before checking artifacts. Unit tests use synthetic file descriptors and fake
+cores; they do not request VPN consent or change host routes.
+ Tests must use synthetic keys and loopback/local stacks;
 do not commit a real VPN profile. Never describe a successful build or simulated
 peer test as a signed device, production-network, or App Store acceptance result.
 

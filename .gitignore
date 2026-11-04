@@ -29,6 +29,12 @@ coverage/
 **/*.key
 **/private*.json
 .tool-cache/
+**/.gradle/
+**/local.properties
+**/jniLibs/
+**/*.so
+**/gradle-wrapper.jar
+**/*.iml
 **/*.wgc-ne-backup
 **/__pycache__/
 *.pyc

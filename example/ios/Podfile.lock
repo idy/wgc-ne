@@ -1,6 +1,6 @@
 PODS:
   - Flutter (1.0.0)
-  - wgc_ne (0.1.0):
+  - wgc_ne (0.2.0):
     - Flutter
 
 DEPENDENCIES:
@@ -15,7 +15,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
-  wgc_ne: 0005c3fa5418270212b4195f17c7457676dc9ac7
+  wgc_ne: a23cf71c2607db841eaea904147b72fa6c66af38
 
 PODFILE CHECKSUM: 3ba3a73b1b12adcf321a227a745625fe0888cc82
 

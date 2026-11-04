@@ -25,11 +25,103 @@ Future<String> output(String command, List<String> arguments,
   return result.stdout.toString().trim();
 }
 
+void copyDirectory(Directory source, Directory destination) {
+  destination.createSync(recursive: true);
+  for (final entity in source.listSync()) {
+    final path = p.join(destination.path, p.basename(entity.path));
+    if (entity is Directory) {
+      copyDirectory(entity, Directory(path));
+    } else if (entity is File) {
+      entity.copySync(path);
+    }
+  }
+}
+
+void publishBuild(String staged, Directory target, String packageRoot,
+    Map<String, Object?> metadata) {
+  File(p.join(staged, 'wgc-ne-build.json'))
+      .writeAsStringSync(jsonEncode(metadata));
+  final legal = Directory(p.join(staged, 'Legal'))..createSync();
+  for (final name in ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md']) {
+    File(p.join(packageRoot, name)).copySync(p.join(legal.path, name));
+  }
+  copyDirectory(Directory(p.join(packageRoot, 'third_party/licenses')),
+      Directory(p.join(legal.path, 'dependencies')));
+  target.parent.createSync(recursive: true);
+  if (target.existsSync()) target.deleteSync(recursive: true);
+  copyDirectory(Directory(staged), target);
+  stdout.writeln('Built ${target.path}');
+}
+
+Future<String> buildAndroid(String moduleDirectory, String staged,
+    String? requestedNdk, List<String> abis) async {
+  final sdk = Platform.environment['ANDROID_HOME'] ??
+      Platform.environment['ANDROID_SDK_ROOT'];
+  final ndk = requestedNdk ??
+      Platform.environment['ANDROID_NDK_HOME'] ??
+      Platform.environment['ANDROID_NDK_ROOT'] ??
+      (sdk == null ? null : p.join(sdk, 'ndk', '28.2.13676358'));
+  if (ndk == null || !File(p.join(ndk, 'source.properties')).existsSync()) {
+    throw StateError(
+        'Supply --ndk, ANDROID_NDK_HOME, or install NDK 28.2.13676358 in ANDROID_HOME');
+  }
+  final properties = File(p.join(ndk, 'source.properties')).readAsStringSync();
+  final revision =
+      RegExp(r'Pkg\.Revision\s*=\s*([0-9.]+)').firstMatch(properties)?.group(1);
+  if (revision == null || int.parse(revision.split('.').first) < 28) {
+    throw StateError(
+        'Android builds require NDK r28 or newer for 16 KiB page support');
+  }
+  final toolchain = p.join(ndk, 'toolchains/llvm/prebuilt',
+      Platform.isMacOS ? 'darwin-x86_64' : 'linux-x86_64', 'bin');
+  const targets = {
+    'arm64-v8a': ['arm64', 'aarch64-linux-android'],
+    'armeabi-v7a': ['arm', 'armv7a-linux-androideabi'],
+    'x86_64': ['amd64', 'x86_64-linux-android'],
+  };
+  for (final abi in abis) {
+    final target = targets[abi]!;
+    final clang = p.join(toolchain, '${target[1]}23-clang');
+    if (!File(clang).existsSync())
+      throw StateError('Android NDK compiler is missing');
+    final directory = Directory(p.join(staged, abi))
+      ..createSync(recursive: true);
+    stdout.writeln('Building Android $abi (API 23)');
+    await run(
+        'go',
+        [
+          'build',
+          '-tags',
+          'with_gvisor',
+          '-trimpath',
+          '-ldflags=-s -w',
+          '-buildmode=c-shared',
+          '-o',
+          p.join(directory.path, 'libwgcne.so'),
+          '.',
+        ],
+        directory: moduleDirectory,
+        environment: {
+          'CGO_ENABLED': '1',
+          'GOOS': 'android',
+          'GOARCH': target[0],
+          if (target[0] == 'arm') 'GOARM': '7',
+          'CC': clang,
+          'CGO_LDFLAGS': '-Wl,-z,max-page-size=16384',
+        });
+    final header = File(p.join(directory.path, 'libwgcne.h'));
+    if (header.existsSync()) header.deleteSync();
+  }
+  return revision;
+}
+
 void main(List<String> arguments) async {
   Directory? temporary;
   try {
     var platform = 'ios';
-    var destination = p.absolute('build/WGCCore.xcframework');
+    String? requestedDestination;
+    String? ndkPath;
+    var androidAbis = ['arm64-v8a', 'x86_64'];
     String? configPath;
     var force = false;
     var deviceOnly = false;
@@ -37,7 +129,8 @@ void main(List<String> arguments) async {
       final argument = arguments[index];
       if (argument == '--help') {
         stdout.writeln(
-            'dart run wgc_ne:build_core [--platform ios|macos|all] [--config file.yaml] [--output build/WGCCore.xcframework] [--device-only] [--force]');
+            'dart run wgc_ne:build_core [--platform ios|macos|all|android] [--config file.yaml] [--output directory] [--device-only] [--ndk directory] [--android-abis arm64-v8a,x86_64] [--force]\n'
+            'Default output: build/WGCCore.xcframework (Apple) or build/android/jniLibs (Android). all selects all Apple slices.');
         return;
       }
       if (argument == '--force') {
@@ -48,7 +141,8 @@ void main(List<String> arguments) async {
         deviceOnly = true;
         continue;
       }
-      if (!['--platform', '--output', '--config'].contains(argument) ||
+      if (!['--platform', '--output', '--config', '--ndk', '--android-abis']
+              .contains(argument) ||
           index + 1 >= arguments.length) {
         throw ArgumentError('Unknown or incomplete option: $argument');
       }
@@ -57,19 +151,41 @@ void main(List<String> arguments) async {
         case '--platform':
           platform = value;
         case '--output':
-          destination = p.absolute(value);
+          requestedDestination = p.absolute(value);
         case '--config':
           configPath = p.absolute(value);
+        case '--ndk':
+          ndkPath = p.absolute(value);
+        case '--android-abis':
+          androidAbis = value.split(',');
       }
     }
-    if (!Platform.isMacOS)
-      throw StateError('Apple core builds require macOS and Xcode');
-    if (!['ios', 'macos', 'all'].contains(platform))
+    if (!['ios', 'macos', 'all', 'android'].contains(platform))
       throw ArgumentError('Invalid platform');
+    final android = platform == 'android';
+    if (!android && !Platform.isMacOS)
+      throw StateError('Apple core builds require macOS and Xcode');
+    if (android && !Platform.isMacOS && !Platform.isLinux)
+      throw StateError(
+          'Android core builds require macOS or Linux and Android NDK r28+');
     if (deviceOnly && platform != 'ios')
       throw ArgumentError('--device-only requires --platform ios');
-    if (p.basename(destination) != 'WGCCore.xcframework')
-      throw ArgumentError('Output must be named WGCCore.xcframework');
+    if (!android && (ndkPath != null || arguments.contains('--android-abis')))
+      throw ArgumentError('Android options require --platform android');
+    if (androidAbis.isEmpty ||
+        androidAbis.toSet().length != androidAbis.length ||
+        androidAbis.any(
+            (abi) => !['arm64-v8a', 'armeabi-v7a', 'x86_64'].contains(abi)))
+      throw ArgumentError(
+          'Supported Android ABIs: arm64-v8a, armeabi-v7a, x86_64');
+    final destination = requestedDestination ??
+        p.absolute(
+            android ? 'build/android/jniLibs' : 'build/WGCCore.xcframework');
+    if (p.basename(destination) !=
+        (android ? 'jniLibs' : 'WGCCore.xcframework'))
+      throw ArgumentError(android
+          ? 'Output must be named jniLibs'
+          : 'Output must be named WGCCore.xcframework');
     final target = Directory(destination);
     if (target.existsSync() &&
         (!force ||
@@ -138,7 +254,16 @@ void main(List<String> arguments) async {
     temporary = await Directory.systemTemp.createTemp('wgc-ne-core-');
     final moduleDirectory = Directory(p.join(temporary.path, 'module'))
       ..createSync();
-    final source = File(p.join(coreRoot, 'cmd/wgc-ne-core/main.go'))
+    final commandRoot =
+        p.join(coreRoot, 'cmd', android ? 'wgc-ne-android' : 'wgc-ne-core');
+    if (android) {
+      for (final file in Directory(commandRoot).listSync().whereType<File>()) {
+        if (['.c', '.h'].contains(p.extension(file.path))) {
+          file.copySync(p.join(moduleDirectory.path, p.basename(file.path)));
+        }
+      }
+    }
+    final source = File(p.join(commandRoot, 'main.go'))
         .readAsStringSync()
         .replaceFirst('// wgc-ne:extension-imports',
             imports.map((value) => '_ ${jsonEncode(value)}').join('\n'));
@@ -150,7 +275,7 @@ void main(List<String> arguments) async {
         [
           'mod',
           'edit',
-          '-require=$moduleName@v0.1.0',
+          '-require=$moduleName@v0.2.0',
           '-replace=$moduleName=$coreRoot'
         ],
         directory: moduleDirectory.path);
@@ -170,6 +295,26 @@ void main(List<String> arguments) async {
     final wgcVersion = await output(
         'go', ['list', '-m', '-f', '{{.Version}}', 'github.com/idy/wgc'],
         directory: moduleDirectory.path);
+    final metadata = <String, Object?>{
+      'abi_version': 1,
+      'core_version': '0.2.0',
+      'wgc_version': wgcVersion.replaceFirst(RegExp(r'^v'), ''),
+      'sing_box_version': '1.14.4',
+      'platform': platform,
+      'extensions': imports,
+    };
+    if (android) {
+      final staged = p.join(temporary.path, 'jniLibs');
+      final revision = await buildAndroid(
+          moduleDirectory.path, staged, ndkPath, androidAbis);
+      publishBuild(staged, target, packageRoot, {
+        ...metadata,
+        'android_api': 23,
+        'android_abis': androidAbis,
+        'ndk_version': revision,
+      });
+      return;
+    }
     final clang = await output('xcrun', ['--find', 'clang']);
     final libraries = <String>[];
     final slices = <String, List<String>>{
@@ -232,26 +377,7 @@ void main(List<String> arguments) async {
       '-output',
       staged
     ]);
-    File(p.join(staged, 'wgc-ne-build.json')).writeAsStringSync(jsonEncode({
-      'abi_version': 1,
-      'core_version': '0.1.0',
-      'wgc_version': wgcVersion.replaceFirst(RegExp(r'^v'), ''),
-      'sing_box_version': '1.14.4',
-      'platform': platform,
-      'extensions': imports
-    }));
-    final legal = Directory(p.join(staged, 'Legal'))..createSync();
-    for (final name in ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md']) {
-      File(p.join(packageRoot, name)).copySync(p.join(legal.path, name));
-    }
-    await run('/usr/bin/ditto', [
-      p.join(packageRoot, 'third_party/licenses'),
-      p.join(legal.path, 'dependencies')
-    ]);
-    target.parent.createSync(recursive: true);
-    if (target.existsSync()) await target.delete(recursive: true);
-    await run('/usr/bin/ditto', [staged, destination]);
-    stdout.writeln('Built $destination');
+    publishBuild(staged, target, packageRoot, metadata);
   } catch (error) {
     stderr.writeln('WGC NE build failed: $error');
     exitCode = 1;
