@@ -120,7 +120,7 @@ class ApkTests(unittest.TestCase):
         self.apk = self.root / "fixture.apk"
         self.member = "lib/arm64-v8a/libwgcne.so"
 
-    def write_apk(self, data, compression, *, aligned=True, compresslevel=None):
+    def write_apk(self, data, compression, *, aligned=True):
         self.library.write_bytes(data)
         info = zipfile.ZipInfo(self.member)
         if aligned and compression == zipfile.ZIP_STORED:
@@ -129,11 +129,7 @@ class ApkTests(unittest.TestCase):
                 padding += checker.PAGE_SIZE
             info.extra = struct.pack("<HH", 0xFFFF, padding - 4) + b"\0" * (padding - 4)
         with zipfile.ZipFile(self.apk, "w") as apk:
-            apk.writestr(
-                info, data, compress_type=compression, compresslevel=compresslevel,
-            )
-        start = info.header_offset + 30 + len(self.member.encode()) + len(info.extra)
-        return start, info.compress_size
+            apk.writestr(info, data, compress_type=compression)
 
     def run_checker(self):
         arguments = [

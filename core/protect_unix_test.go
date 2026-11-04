@@ -4,7 +4,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -59,24 +58,16 @@ func TestSingBoxDirectSocketsAlwaysProtect(t *testing.T) {
 					}
 					return nil
 				})
-				config, err := NormalizeConfig(testConfig(t))
-				if err != nil {
-					t.Fatal(err)
-				}
-				raw, _ := defaultBoxConfig(config)
-				var document map[string]any
-				if err := json.Unmarshal(raw, &document); err != nil {
-					t.Fatal(err)
-				}
-				direct := map[string]any{"type": "direct", "tag": "bypass"}
-				if mode.bind {
-					direct["inet4_bind_address"] = "127.0.0.1"
-				}
-				document["outbounds"] = append(document["outbounds"].([]any), direct)
-				document["route"].(map[string]any)["auto_detect_interface"] = mode.autoDetect
-				config.SingBox, _ = json.Marshal(document)
+				config := testCustomBox(t, testConfig(t), func(document map[string]any) {
+					direct := map[string]any{"type": "direct", "tag": "bypass"}
+					if mode.bind {
+						direct["inet4_bind_address"] = "127.0.0.1"
+					}
+					document["outbounds"] = append(document["outbounds"].([]any), direct)
+					document["route"].(map[string]any)["auto_detect_interface"] = mode.autoDetect
+				})
 				if mode.android {
-					ctx = service.ContextWith[adapter.PlatformInterface](ctx, &suppliedTUNPlatform{fd: -1, closed: true, android: true, ctx: ctx})
+					ctx = service.ContextWith[adapter.PlatformInterface](ctx, &suppliedTUNPlatform{fd: -1, android: true, ctx: ctx})
 				}
 				boxCtx := boxContext(ctx, config, nil)
 				options, err := parseBoxConfig(boxCtx, config)

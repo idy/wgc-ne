@@ -217,7 +217,7 @@ func TestAndroidOfflineValidation(t *testing.T) {
 		}
 		boxCtx := validationBoxContext(ctx, config, "android")
 		platform, ok := service.FromContext[adapter.PlatformInterface](boxCtx).(*suppliedTUNPlatform)
-		if !ok || platform.fd != -1 || !platform.closed || !platform.android || platform.UnderNetworkExtension() {
+		if !ok || platform.fd != -1 || !platform.android || platform.UnderNetworkExtension() {
 			t.Fatal("validation did not install the closed Android platform")
 		}
 		if _, err := platform.duplicate(); !errors.Is(err, net.ErrClosed) {

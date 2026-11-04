@@ -7,11 +7,13 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Pattern;
 
 // Subtraction preserves excluded routes on Android 6-12, which have no
 // VpnService.Builder.excludeRoute. Inputs come from the validated native core.
 final class CidrRoutes {
     static final int MAX_ROUTES = 8192;
+    private static final Pattern ADDRESS_LITERAL = Pattern.compile("[0-9a-fA-F:.]+");
     final BigInteger address;
     final int prefix;
     final int bits;
@@ -25,7 +27,7 @@ final class CidrRoutes {
     static CidrRoutes parse(String cidr) throws CoreBridge.Failure {
         try {
             String[] parts = cidr.split("/", -1);
-            if (parts.length != 2 || !parts[0].matches("[0-9a-fA-F:.]+")) {
+            if (parts.length != 2 || !ADDRESS_LITERAL.matcher(parts[0]).matches()) {
                 throw new IllegalArgumentException();
             }
             byte[] address = parseAddress(parts[0]);

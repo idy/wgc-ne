@@ -22,7 +22,7 @@ import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
-import java.lang.reflect.Field;
+import org.robolectric.util.ReflectionHelpers;
 import java.time.Duration;
 import java.util.Collections;
 import static org.junit.Assert.*;
@@ -50,22 +50,16 @@ public class PluginConsentTest {
         public void notImplemented() { fail(); }
     }
 
-    private static void set(Object object, String name, Object value) throws Exception {
-        Field field = object.getClass().getDeclaredField(name);
-        field.setAccessible(true);
-        field.set(object, value);
-    }
-
-    @Before public void setUp() throws Exception {
+    @Before public void setUp() {
         plugin = new WgcNePlugin();
-        set(plugin, "context", RuntimeEnvironment.getApplication());
+        ReflectionHelpers.setField(plugin, "context", RuntimeEnvironment.getApplication());
         boundService = mock(WgcVpnService.class);
         doAnswer(invocation -> {
             WgcVpnService.Reply reply = invocation.getArgument(0);
             if (reply != null) reply.success(Collections.singletonMap("state", "disconnected"));
             return null;
         }).when(boundService).stopTunnel(any());
-        set(plugin, "service", boundService);
+        ReflectionHelpers.setField(plugin, "service", boundService);
         activity = Robolectric.buildActivity(Activity.class).setup().get();
         activityBinding = mock(ActivityPluginBinding.class);
         when(activityBinding.getActivity()).thenReturn(activity);
@@ -130,13 +124,13 @@ public class PluginConsentTest {
         assertEquals(1, start.calls);
     }
 
-    private Context delayBinding() throws Exception {
+    private Context delayBinding() {
         Context context = mock(Context.class);
         when(context.getPackageName()).thenReturn(RuntimeEnvironment.getApplication().getPackageName());
         when(context.bindService(any(Intent.class), any(ServiceConnection.class), eq(Context.BIND_AUTO_CREATE)))
                 .thenReturn(true);
-        set(plugin, "context", context);
-        set(plugin, "service", null);
+        ReflectionHelpers.setField(plugin, "context", context);
+        ReflectionHelpers.setField(plugin, "service", null);
         return context;
     }
 
@@ -147,7 +141,7 @@ public class PluginConsentTest {
                 boundService.new LocalBinder());
     }
 
-    private void assertStopBeforeBinding(String method) throws Exception {
+    private void assertStopBeforeBinding(String method) {
         Context context = delayBinding();
         Result start = start();
         Result stop = new Result();
@@ -161,15 +155,15 @@ public class PluginConsentTest {
         verify(boundService, never()).startTunnel(anyString(), anyString(), any());
     }
 
-    @Test public void stopBeforeInitialBindingCancelsQueuedStart() throws Exception {
+    @Test public void stopBeforeInitialBindingCancelsQueuedStart() {
         assertStopBeforeBinding("stop");
     }
 
-    @Test public void removalBeforeInitialBindingCancelsQueuedStart() throws Exception {
+    @Test public void removalBeforeInitialBindingCancelsQueuedStart() {
         assertStopBeforeBinding("removeProfile");
     }
 
-    @Test public void newerStartSurvivesAnOlderQueuedStop() throws Exception {
+    @Test public void newerStartSurvivesAnOlderQueuedStop() {
         Context context = delayBinding();
         Result first = start();
         Result stop = new Result();
@@ -183,12 +177,12 @@ public class PluginConsentTest {
         verify(boundService).startTunnel(eq("{}"), eq("WGC NE"), any());
     }
 
-    @Test public void anotherEngineCanCancelAnOutstandingConsent() throws Exception {
+    @Test public void anotherEngineCanCancelAnOutstandingConsent() {
         Result first = start();
         int code = requestCode();
         WgcNePlugin other = new WgcNePlugin();
-        set(other, "context", RuntimeEnvironment.getApplication());
-        set(other, "service", boundService);
+        ReflectionHelpers.setField(other, "context", RuntimeEnvironment.getApplication());
+        ReflectionHelpers.setField(other, "service", boundService);
         try {
             Result stop = new Result();
             other.onMethodCall(new MethodCall("stop", Collections.emptyMap()), stop);

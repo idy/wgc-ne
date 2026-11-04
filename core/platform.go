@@ -19,7 +19,6 @@ var _ adapter.PlatformInterface = (*suppliedTUNPlatform)(nil)
 type suppliedTUNPlatform struct {
 	mu      sync.Mutex
 	fd      int
-	closed  bool
 	android bool
 	ctx     context.Context
 }
@@ -27,16 +26,14 @@ type suppliedTUNPlatform struct {
 func (p *suppliedTUNPlatform) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.closed {
-		p.closed = true
-		CloseOwnedFD(p.fd)
-	}
+	CloseOwnedFD(p.fd)
+	p.fd = -1
 }
 
 func (p *suppliedTUNPlatform) duplicate() (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed {
+	if p.fd < 0 {
 		return -1, net.ErrClosed
 	}
 	return duplicateFD(p.fd)

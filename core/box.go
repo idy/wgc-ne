@@ -145,7 +145,7 @@ func validationBoxContext(ctx context.Context, config Config, goos string) conte
 		// Match runtime capabilities before constructing sing-box so validation
 		// never attempts Android's forbidden netlink monitor. This closed stub
 		// cannot duplicate a descriptor or open a TUN, even if used by mistake.
-		platform := &suppliedTUNPlatform{fd: -1, closed: true, android: true, ctx: ctx}
+		platform := &suppliedTUNPlatform{fd: -1, android: true, ctx: ctx}
 		ctx = service.ContextWith[adapter.PlatformInterface](ctx, platform)
 	}
 	return boxContext(ctx, config, nil)
