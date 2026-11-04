@@ -2,29 +2,29 @@ import Foundation
 import NetworkExtension
 
 @MainActor
-internal protocol TunnelManagerHandle: AnyObject {
+internal protocol TunnelManagerHandle: AnyObject, Sendable {
     var configuration: NEVPNProtocol? { get set }
     var localizedDescription: String? { get set }
     var isEnabled: Bool { get set }
     var status: NEVPNStatus { get }
-    func save(_ completion: @escaping (Error?) -> Void)
-    func reload(_ completion: @escaping (Error?) -> Void)
-    func remove(_ completion: @escaping (Error?) -> Void)
+    func save(_ completion: @escaping @Sendable (Error?) -> Void)
+    func reload(_ completion: @escaping @Sendable (Error?) -> Void)
+    func remove(_ completion: @escaping @Sendable (Error?) -> Void)
     func start() throws
     func stop()
-    func send(_ message: Data, completion: @escaping (Data?) -> Void) throws
+    func send(_ message: Data, completion: @escaping @Sendable (Data?) -> Void) throws
 }
 
 @MainActor
 internal protocol TunnelManagerRepository {
-    func loadAll(_ completion: @escaping ([TunnelManagerHandle]?, Error?) -> Void)
+    func loadAll(_ completion: @escaping @Sendable ([TunnelManagerHandle]?, Error?) -> Void)
     func makeManager() -> TunnelManagerHandle
 }
 
 @MainActor
 internal struct SystemTunnelManagerRepository: TunnelManagerRepository {
-    func loadAll(_ completion: @escaping ([TunnelManagerHandle]?, Error?) -> Void) {
-        NETunnelProviderManager.loadAllFromPreferences { managers, error in
+    func loadAll(_ completion: @escaping @Sendable ([TunnelManagerHandle]?, Error?) -> Void) {
+        NETunnelProviderManager.loadAllFromPreferences { @Sendable managers, error in
             Task { @MainActor in
                 completion(managers?.map { SystemTunnelManager($0) }, error)
             }
@@ -52,12 +52,18 @@ private final class SystemTunnelManager: TunnelManagerHandle {
         set { manager.isEnabled = newValue }
     }
     var status: NEVPNStatus { manager.connection.status }
-    func save(_ completion: @escaping (Error?) -> Void) { manager.saveToPreferences { completion($0) } }
-    func reload(_ completion: @escaping (Error?) -> Void) { manager.loadFromPreferences { completion($0) } }
-    func remove(_ completion: @escaping (Error?) -> Void) { manager.removeFromPreferences { completion($0) } }
+    func save(_ completion: @escaping @Sendable (Error?) -> Void) {
+        manager.saveToPreferences { @Sendable error in completion(error) }
+    }
+    func reload(_ completion: @escaping @Sendable (Error?) -> Void) {
+        manager.loadFromPreferences { @Sendable error in completion(error) }
+    }
+    func remove(_ completion: @escaping @Sendable (Error?) -> Void) {
+        manager.removeFromPreferences { @Sendable error in completion(error) }
+    }
     func start() throws { try manager.connection.startVPNTunnel() }
     func stop() { manager.connection.stopVPNTunnel() }
-    func send(_ message: Data, completion: @escaping (Data?) -> Void) throws {
+    func send(_ message: Data, completion: @escaping @Sendable (Data?) -> Void) throws {
         guard let session = manager.connection as? NETunnelProviderSession else {
             throw WGCNEError.providerUnavailable
         }
@@ -65,7 +71,7 @@ private final class SystemTunnelManager: TunnelManagerHandle {
     }
 }
 
-internal struct ProfileReference {
+internal struct ProfileReference: Sendable {
     let reference: Data
     let accessGroup: String
     let owner: String

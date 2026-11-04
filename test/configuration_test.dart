@@ -198,14 +198,177 @@ void main() {
     final options = <String, Object?>{
       'nested': <Object?>['original']
     };
-    final transport = WgcTransport(type: 'custom', options: options);
+    final transport = WgcTransport(
+      type: 'custom',
+      options: options,
+      base: WgcTransport(type: 'inner', options: options),
+    );
     (options['nested'] as List)[0] = 'changed';
-    expect(transport.options['nested'], ['original']);
-    expect(() => (transport.options['nested'] as List).add('more'),
-        throwsUnsupportedError);
+    for (final layer in [transport, transport.base!]) {
+      expect(layer.options['nested'], ['original']);
+      expect(() => layer.options['extra'] = 'value', throwsUnsupportedError);
+      expect(() => (layer.options['nested'] as List).add('more'),
+          throwsUnsupportedError);
+    }
     final config = WgcConfiguration.fromJson(configurationJson());
     expect(() => config.addresses.add('10.7.0.3/32'), throwsUnsupportedError);
     expect(transport.toString(), isNot(contains('original')));
+  });
+
+  test('the documented counter over UDP transport round trips', () {
+    final transportJson = <String, Object?>{
+      'type': 'counter',
+      'options': <String, Object?>{},
+      'base': {
+        'type': 'udp',
+        'options': {'listen': ':0'},
+      },
+    };
+    final configuration = WgcConfiguration.fromJson({
+      ...configurationJson(),
+      'transport': transportJson,
+    });
+    expect(configuration.transport.type, 'counter');
+    expect(configuration.transport.base?.type, 'udp');
+    expect(configuration.transport.base?.options, {'listen': ':0'});
+    expect(configuration.transport.toJson(), transportJson);
+    expect(
+        WgcConfiguration.fromJsonString(configuration.toJsonString()).toJson(),
+        configuration.toJson());
+  });
+
+  test('programmatic transport composition preserves every level', () {
+    final leaf = WgcTransport(options: {'listen': ':0'});
+    final transport = WgcTransport(
+      type: 'custom-outer',
+      options: {
+        'private_option': [1, true, null]
+      },
+      base: WgcTransport(type: 'counter', base: leaf),
+    );
+    expect(transport.base?.base, same(leaf));
+    expect(
+        WgcTransport.fromJson(transport.toJson()).toJson(), transport.toJson());
+    expect(transport.toString(), isNot(contains('private_option')));
+    expect(leaf.toJson().containsKey('base'), isFalse);
+    expect(
+        WgcTransport.fromJson({'type': 'counter', 'base': null}).base, isNull);
+
+    // Registration and factory/wrapper constraints belong to the native core.
+    expect(
+        WgcTransport.fromJson({
+          'type': 'unregistered',
+          'base': {'type': 'another-custom-type'},
+        }).base?.type,
+        'another-custom-type');
+  });
+
+  test('malformed nested transports and unknown fields fail without disclosure',
+      () {
+    const secret = 'private-nested-value';
+    final invalidBases = <Object?>[
+      secret,
+      1,
+      true,
+      <Object?>[],
+      <String, Object?>{},
+      {1: 'udp'},
+      {'type': 1},
+      {'type': ''},
+      {'type': 'udp', 'options': <Object?>[]},
+      {'type': 'counter', 'base': secret},
+    ];
+    for (final base in invalidBases) {
+      expect(
+          () => WgcTransport.fromJson({'type': 'counter', 'base': base}),
+          throwsA(isA<FormatException>().having((error) => error.toString(),
+              'message', isNot(contains(secret)))));
+    }
+    const unknown = 'private-nested-field';
+    for (var depth = 0; depth <= 8; depth++) {
+      var json = <String, Object?>{'type': 'udp', unknown: secret};
+      for (var index = 0; index < depth; index++) {
+        json = {'type': 'counter', 'base': json};
+      }
+      expect(
+          () => WgcTransport.fromJson(json),
+          throwsA(isA<FormatException>()
+              .having((error) => error.toString(), 'field',
+                  isNot(contains(unknown)))
+              .having((error) => error.toString(), 'value',
+                  isNot(contains(secret)))));
+    }
+  });
+
+  test('explicit transport depth accepts eight wrappers and rejects depth nine',
+      () {
+    var transport = WgcTransport();
+    for (var index = 0; index < 8; index++) {
+      transport = WgcTransport(type: 'counter', base: transport);
+    }
+    expect(
+        WgcTransport.fromJson(transport.toJson()).toJson(), transport.toJson());
+    var leaf = transport;
+    for (var index = 0; index < 8; index++) {
+      leaf = leaf.base!;
+    }
+    expect(leaf.type, 'udp');
+    expect(leaf.base, isNull);
+    expect(() => WgcTransport(type: 'counter', base: transport),
+        throwsFormatException);
+    expect(
+        () => WgcTransport.fromJson(
+            {'type': 'counter', 'base': transport.toJson()}),
+        throwsFormatException);
+
+    // Dart cannot infer an implicit UDP base for a custom registered name.
+    var customJson = <String, Object?>{'type': 'custom-leaf'};
+    for (var index = 0; index < 8; index++) {
+      customJson = {'type': 'custom-layer', 'base': customJson};
+    }
+    expect(WgcTransport.fromJson(customJson).toJson()['type'], 'custom-layer');
+    final cyclicJson = <String, Object?>{'type': 'counter'};
+    cyclicJson['base'] = cyclicJson;
+    expect(() => WgcTransport.fromJson(cyclicJson), throwsFormatException);
+  });
+
+  test('canonical keys keep fixed validation errors and accept zero bytes', () {
+    final validKeys = [
+      key,
+      base64Encode(List.filled(32, 0)),
+      base64Encode(List.filled(32, 255)),
+    ];
+    for (final value in validKeys) {
+      final configuration = WgcConfiguration.fromJson({
+        ...configurationJson(),
+        'private_key': value,
+        'peers': [
+          {'id': 'exit', 'public_key': value, 'endpoint': '203.0.113.10:51820'}
+        ],
+      });
+      expect(configuration.privateKey, value);
+      expect(configuration.peers.single.publicKey, value);
+    }
+    final invalidKeys = [
+      'private-key-never-disclosed',
+      '$key\n',
+      key.substring(0, key.length - 1),
+      base64Encode(List.filled(31, 1)),
+      base64Encode(List.filled(33, 1)),
+      base64Encode(List.filled(32, 255)).replaceAll('/', '_'),
+    ];
+    final invalidKey = isA<FormatException>().having((error) => error.message,
+        'message', 'WireGuard keys must be canonical Base64 with 32 bytes.');
+    for (final value in invalidKeys) {
+      expect(
+          () => WgcConfiguration.fromJson(
+              {...configurationJson(), 'private_key': value}),
+          throwsA(invalidKey));
+      expect(
+          () => WgcPeer(
+              id: 'exit', publicKey: value, endpoint: '203.0.113.10:51820'),
+          throwsA(invalidKey));
+    }
   });
 
   test('network settings permit outer peer exclusions from another family', () {

@@ -31,7 +31,13 @@ It preserves a backup and refuses an existing target/provider folder. It does no
 choose a development team, register identifiers, or sign an application. By
 default it references the WGCNE Swift package at version 0.1.0; `--sdk` selects a
 local checkout during development. Inspect the generated project changes and
-finish provisioning in Xcode. The helper requires Python 3.9+ and `plutil`.
+finish provisioning in Xcode. The helper requires Python 3.9+, `plutil`, and
+Xcode's `xcodebuild`. It reads Runner's effective settings for every configuration,
+merges the entitlement file selected by Xcode, and derives each default provider
+identifier from that configuration's app identifier. An explicit `--provider-id`
+must belong to every containing-app configuration. The default shared Keychain
+group uses the Release app identifier (or the first configuration if Release is
+absent); `--keychain-group` selects a different shared suffix.
 
 For manual integration, create a Network Extension target in Xcode using the Packet Tunnel Provider
 extension type. Embed it in the app. Add the WGCNE Swift package from this repo to

@@ -39,7 +39,7 @@ final class WgcNe {
   final Set<MultiStreamController<WgcStatus>> _subscribers = {};
   final Set<_NativeCall> _calls = {};
   Timer? _timer;
-  Future<WgcStatus>? _statusRequest;
+  _NativeCall? _statusRequest;
   bool _pollInFlight = false;
   bool _disposed = false;
   int _pollGeneration = 0;
@@ -74,17 +74,21 @@ final class WgcNe {
     }
     final pending = _statusRequest;
     if (pending != null) {
-      return pending;
+      return pending.future;
     }
-    final request = _invoke('status', _providerArguments);
-    _statusRequest = request;
-    // Attach cleanup to both branches without creating an unobserved error future.
-    request.then<void>((_) {
-      if (identical(_statusRequest, request)) _statusRequest = null;
-    }, onError: (Object _, StackTrace __) {
-      if (identical(_statusRequest, request)) _statusRequest = null;
-    });
-    return request;
+    final call = _NativeCall(requestTimeout, _calls.remove,
+        onTransportCompleted: _clearStatusRequest);
+    // Reserve before dispatch: the channel can synchronously reenter status().
+    _statusRequest = call;
+    _calls.add(call);
+    // Observe errors even if a caller attaches only after the deadline or reply.
+    call.future.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    unawaited(_dispatch(_channel, call, 'status', _providerArguments));
+    return call.future;
+  }
+
+  void _clearStatusRequest(_NativeCall call) {
+    if (identical(_statusRequest, call)) _statusRequest = null;
   }
 
   Map<String, Object?> get _providerArguments =>
@@ -96,14 +100,15 @@ final class WgcNe {
     }
     final call = _NativeCall(requestTimeout, _calls.remove);
     _calls.add(call);
-    unawaited(_dispatch(call, method, arguments));
+    unawaited(_dispatch(_channel, call, method, arguments));
     return call.future;
   }
 
-  Future<void> _dispatch(
-      _NativeCall call, String method, Map<String, Object?> arguments) async {
+  // Keep the raw reply independent of the client so disposal can detach it.
+  static Future<void> _dispatch(MethodChannel channel, _NativeCall call,
+      String method, Map<String, Object?> arguments) async {
     try {
-      final reply = await _channel.invokeMethod<Object?>(method, arguments);
+      final reply = await channel.invokeMethod<Object?>(method, arguments);
       call.succeed(WgcStatus.fromMap(reply));
     } on WgcException catch (error) {
       call.fail(error);
@@ -117,6 +122,8 @@ final class WgcNe {
       call.fail(const WgcException(WgcErrorCode.unsupportedPlatform));
     } catch (_) {
       call.fail(const WgcException(WgcErrorCode.internalError));
+    } finally {
+      call.transportCompleted();
     }
   }
 
@@ -187,6 +194,8 @@ final class WgcNe {
     }
     _disposed = true;
     _stopPolling();
+    _statusRequest?.detachTransport();
+    _statusRequest = null;
     for (final call in _calls.toList()) {
       call.fail(const WgcException(WgcErrorCode.disposed));
     }
@@ -203,12 +212,15 @@ final class WgcNe {
 /// One native call. Future.timeout keeps its timer until it fires, so this uses
 /// a plain Timer that settling or disposal can cancel.
 final class _NativeCall {
-  _NativeCall(Duration limit, this._onSettled) {
+  _NativeCall(Duration limit, this._onSettled,
+      {void Function(_NativeCall)? onTransportCompleted})
+      : _onTransportCompleted = onTransportCompleted {
     _deadline =
         Timer(limit, () => fail(const WgcException(WgcErrorCode.timeout)));
   }
 
-  final void Function(_NativeCall) _onSettled;
+  void Function(_NativeCall)? _onSettled;
+  void Function(_NativeCall)? _onTransportCompleted;
   final Completer<WgcStatus> _completer = Completer<WgcStatus>();
   late final Timer _deadline;
 
@@ -226,12 +238,24 @@ final class _NativeCall {
     }
   }
 
+  void transportCompleted() {
+    final onCompleted = _onTransportCompleted;
+    _onTransportCompleted = null;
+    onCompleted?.call(this);
+  }
+
+  void detachTransport() {
+    _onTransportCompleted = null;
+  }
+
   bool _settle() {
     if (_completer.isCompleted) {
       return false;
     }
     _deadline.cancel();
-    _onSettled(this);
+    final onSettled = _onSettled;
+    _onSettled = null;
+    onSettled?.call(this);
     return true;
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,16 @@ import 'configuration_test.dart' show configurationJson;
 
 Matcher isFailure(WgcErrorCode kind) =>
     isA<WgcException>().having((error) => error.kind, 'kind', kind);
+
+final class _ReentrantMethodChannel extends MethodChannel {
+  const _ReentrantMethodChannel(this.onInvoke) : super('test/reentrant-status');
+
+  final Future<Object?> Function() onInvoke;
+
+  @override
+  Future<T?> invokeMethod<T>(String method, [dynamic arguments]) =>
+      onInvoke().then((value) => value as T?);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -125,42 +136,158 @@ void main() {
     });
   });
 
-  test('hung requests are bounded and polling never overlaps', () {
+  test('status stays coalesced until the raw reply settles after a timeout',
+      () {
     fakeAsync((clock) {
-      var calls = 0;
-      final reply = Completer<Object?>();
+      final replies = <Completer<Object?>>[];
       messenger.setMockMethodCallHandler(channel, (_) {
-        calls++;
+        final reply = Completer<Object?>();
+        replies.add(reply);
         return reply.future;
       });
       final api = client(timeout: const Duration(milliseconds: 200));
       final errors = <Object>[];
-      final subscription = api.statuses.listen((_) {}, onError: errors.add);
+      final statuses = <WgcStatus>[];
+      final subscription =
+          api.statuses.listen(statuses.add, onError: errors.add);
       clock.flushMicrotasks();
+      final first = api.status();
+      expect(api.status(), same(first));
       Object? manualError;
-      unawaited(api
-          .status()
+      unawaited(first
           .then<void>((_) => fail('A hung status call must time out'),
               onError: (Object error) {
         manualError = error;
       }));
       clock.elapse(const Duration(milliseconds: 250));
+      expect(manualError, isFailure(WgcErrorCode.timeout));
+      expect(errors.single, isFailure(WgcErrorCode.timeout));
+      expect(clock.nonPeriodicTimerCount, 0);
+
+      for (var tick = 0; tick < 4; tick++) {
+        clock.elapse(const Duration(seconds: 1));
+        expect(api.status(), same(first));
+        Object? repeatedError;
+        unawaited(api.status().then<void>(
+            (_) => fail('The raw call is pending'), onError: (Object error) {
+          repeatedError = error;
+        }));
+        clock.flushMicrotasks();
+        expect(repeatedError, isFailure(WgcErrorCode.timeout));
+        expect(replies, hasLength(1),
+            reason: 'Neither polling nor manual status may overlap a raw call');
+      }
+      expect(errors, hasLength(5));
+      expect(errors, everyElement(isFailure(WgcErrorCode.timeout)));
+      expect(statuses, isEmpty);
+
+      replies.single.complete({'state': 'connected'});
       clock.flushMicrotasks();
-      expect(calls, 1);
-      expect(
-          manualError,
-          isA<WgcException>()
-              .having((error) => error.kind, 'kind', WgcErrorCode.timeout));
-      expect(errors.single, isA<WgcException>());
+      final next = api.status();
+      expect(next, isNot(same(first)));
+      expect(api.status(), same(next));
+      expect(replies, hasLength(2),
+          reason: 'Actual transport completion releases the status operation');
+      Object? nextError;
+      unawaited(next.then<void>((_) => fail('The second reply is withheld'),
+          onError: (Object error) {
+        nextError = error;
+      }));
+      clock.elapse(const Duration(seconds: 2));
+      expect(nextError, isFailure(WgcErrorCode.timeout));
+      expect(replies, hasLength(2));
+
+      var disposed = false;
+      unawaited(api.dispose().then((_) => disposed = true));
+      clock.flushMicrotasks();
+      expect(disposed, isTrue,
+          reason: 'Disposal must finish before the raw transport replies');
+      expect(clock.periodicTimerCount, 0);
+      expect(clock.nonPeriodicTimerCount, 0);
+      final errorCount = errors.length;
+      replies.last.completeError(
+          PlatformException(code: 'core_failure', message: 'late secret'));
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(seconds: 3));
+      expect(replies, hasLength(2));
+      expect(errors, hasLength(errorCount));
+      expect(statuses, isEmpty);
+      expect(clock.periodicTimerCount, 0);
+      expect(clock.nonPeriodicTimerCount, 0);
       unawaited(subscription.cancel());
+      clock.flushMicrotasks();
+    });
+  });
+
+  test('status reserves its future before synchronous channel reentrancy', () {
+    fakeAsync((clock) {
+      final reply = Completer<Object?>();
+      var calls = 0;
+      late WgcNe api;
+      Future<WgcStatus>? reentered;
+      api = WgcNe(
+        providerBundleIdentifier: 'dev.example.consumer.tunnel',
+        keychainAccessGroup: 'TEAM.dev.example.shared',
+        channel: _ReentrantMethodChannel(() {
+          calls++;
+          if (calls == 1) reentered = api.status();
+          return reply.future;
+        }),
+      );
+      final first = api.status();
+      expect(calls, 1);
+      expect(reentered, same(first));
+      expect(api.status(), same(first));
+      WgcStatus? value;
+      unawaited(first.then((status) => value = status));
       reply.complete({'state': 'connected'});
+      clock.flushMicrotasks();
+      expect(value?.state, WgcConnectionState.connected);
+      final next = api.status();
+      expect(next, isNot(same(first)));
+      expect(calls, 2);
       clock.flushMicrotasks();
       unawaited(api.dispose());
       clock.flushMicrotasks();
-      clock.elapse(const Duration(seconds: 3));
-      expect(calls, 1);
-      expect(clock.periodicTimerCount, 0);
       expect(clock.nonPeriodicTimerCount, 0);
+    });
+  });
+
+  test('status errors are observed before a delayed caller attaches', () {
+    fakeAsync((clock) {
+      final reply = Completer<Object?>();
+      var calls = 0;
+      messenger.setMockMethodCallHandler(channel, (_) {
+        calls++;
+        return reply.future;
+      });
+      final api = client();
+      final first = api.status();
+      expect(api.status(), same(first));
+      reply.completeError(PlatformException(
+          code: 'profile_conflict', message: 'private native detail'));
+      clock.flushMicrotasks();
+      Object? failure;
+      unawaited(first.then<void>((_) => fail('The status must fail'),
+          onError: (Object error) {
+        failure = error;
+      }));
+      clock.flushMicrotasks();
+      expect(failure, isFailure(WgcErrorCode.profileConflict));
+      expect(failure.toString(), isNot(contains('private native detail')));
+      final lateReply = Completer<Object?>();
+      messenger.setMockMethodCallHandler(channel, (_) {
+        calls++;
+        return lateReply.future;
+      });
+      final next = api.status();
+      expect(next, isNot(same(first)));
+      expect(calls, 2);
+      unawaited(api.dispose());
+      clock.flushMicrotasks();
+      expect(clock.nonPeriodicTimerCount, 0);
+      lateReply.completeError(PlatformException(code: 'core_failure'));
+      clock.flushMicrotasks();
     });
   });
 
@@ -241,6 +368,45 @@ void main() {
     await expectLater(api.status(), throwsA(isFailure(WgcErrorCode.disposed)));
     await expectLater(api.stop(), throwsA(isFailure(WgcErrorCode.disposed)));
     await api.dispose();
+  });
+
+  test('status keys are optional and require canonical 32-byte Base64', () {
+    final validKeys = <String?>[
+      null,
+      base64Encode(List.filled(32, 0)),
+      base64Encode(List.filled(32, 1)),
+      base64Encode(List.filled(32, 255)),
+    ];
+    for (final key in validKeys) {
+      final status = WgcStatus.fromMap({
+        'state': 'connected',
+        'core': {
+          'state': 'running',
+          if (key != null) 'public_key': key,
+        },
+      });
+      expect(status.core?.publicKey, key);
+    }
+    final canonicalKey = base64Encode(List.filled(32, 1));
+    final invalidKeys = <Object?>[
+      1,
+      '',
+      'private-key-never-disclosed',
+      'x' * 129,
+      '$canonicalKey\n',
+      canonicalKey.substring(0, canonicalKey.length - 1),
+      base64Encode(List.filled(31, 1)),
+      base64Encode(List.filled(33, 1)),
+      base64Encode(List.filled(32, 255)).replaceAll('/', '_'),
+    ];
+    for (final key in invalidKeys) {
+      expect(
+          () => WgcStatus.fromMap({
+                'state': 'connected',
+                'core': {'state': 'running', 'public_key': key},
+              }),
+          throwsA(isFailure(WgcErrorCode.invalidResponse)));
+    }
   });
 
   test('malformed counters and sensitive unknown fields cannot escape', () {

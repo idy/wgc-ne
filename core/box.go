@@ -20,6 +20,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/direct"
 	"github.com/sagernet/sing-box/protocol/tun"
+	singTun "github.com/sagernet/sing-tun"
 	singJSON "github.com/sagernet/sing/common/json"
 )
 
@@ -56,7 +57,7 @@ func defaultBoxConfig(config Config) ([]byte, error) {
 	dnsServer, _ := netip.ParseAddrPort(config.DNSServer)
 	return json.Marshal(object{
 		"log":       object{"disabled": true},
-		"inbounds":  []object{{"type": "tun", "tag": "tun-in", "address": config.Addresses, "mtu": config.MTU, "stack": "mixed", "auto_route": false, "dns_mode": "disabled"}},
+		"inbounds":  []object{{"type": "tun", "tag": "tun-in", "address": config.Addresses, "mtu": config.MTU, "stack": "gvisor", "auto_route": false, "dns_mode": "disabled"}},
 		"outbounds": []object{{"type": "wgc", "tag": "vpn", "peer": config.DefaultPeer, "resolver": "dns-remote"}},
 		"dns":       object{"servers": []object{{"type": "udp", "tag": "dns-remote", "server": dnsServer.Addr().String(), "server_port": dnsServer.Port(), "detour": "vpn"}}, "final": "dns-remote", "reverse_mapping": true},
 		"route":     object{"rules": []object{{"inbound": []string{"tun-in"}, "port": []int{53}, "action": "hijack-dns"}}, "final": "vpn", "auto_detect_interface": false, "default_domain_resolver": "dns-remote"},
@@ -93,8 +94,31 @@ func parseBoxConfig(ctx context.Context, config Config) (option.Options, error) 
 			return options, errors.New("TUN addresses and MTU must match network settings")
 		}
 		for index, prefix := range value.Address {
-			if prefix.String() != config.Addresses[index] {
+			address, err := netip.ParsePrefix(config.Addresses[index])
+			if err != nil || prefix != address {
 				return options, errors.New("TUN addresses must match network settings")
+			}
+		}
+		switch value.Stack {
+		case "", "mixed", "system":
+			// On Apple, an empty stack selects mixed. Both mixed and system
+			// need a successor within the first prefix of each address family.
+			var checked4, checked6 bool
+			for _, prefix := range value.Address {
+				if prefix.Addr().Is4() {
+					if checked4 {
+						continue
+					}
+					checked4 = true
+				} else {
+					if checked6 {
+						continue
+					}
+					checked6 = true
+				}
+				if !singTun.HasNextAddress(prefix, 1) {
+					return options, errors.New("TUN stack needs a successor address in the first prefix of each family")
+				}
 			}
 		}
 	}

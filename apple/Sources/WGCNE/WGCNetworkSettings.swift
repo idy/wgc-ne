@@ -82,9 +82,10 @@ public struct WGCNetworkSettings: Codable, Equatable, Sendable {
 
     public init(addresses: [String], mtu: Int, dnsServers: [String],
                 includedRoutes: [String], excludedRoutes: [String]) throws {
+        // Derived exclusions also include up to 32 peer endpoint host routes.
         guard (1...64).contains(addresses.count), (576...65535).contains(mtu),
               (1...8).contains(dnsServers.count), includedRoutes.count <= 1024,
-              excludedRoutes.count <= 1024 else { throw WGCNEError.invalidConfiguration }
+              excludedRoutes.count <= 1056 else { throw WGCNEError.invalidConfiguration }
         let parsedAddresses = try addresses.map(IPCIDR.init)
         let families = Set(parsedAddresses.map { $0.address.family })
         if families.contains(AF_INET6), mtu < 1280 { throw WGCNEError.invalidConfiguration }

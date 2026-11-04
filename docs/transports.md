@@ -38,10 +38,14 @@ type Transport interface {
 ```
 
 Keep WGC datagram boundaries and the remote `AddrPort` identity. Close must wake
-blocked readers. A successful wrapper owns and closes its base. On construction
-failure, return nil plus an error; the registry closes the base. Do not log keys
-or transport options. Validate your own options; the registry cannot infer a
-custom implementation's schema.
+blocked readers and writes. A successful wrapper owns and closes its base. On
+construction failure, return nil plus an error; the registry closes the base. Do
+not log keys or transport options. Validate your own options; the registry cannot
+infer a custom implementation's schema.
+
+Factory and wrapper constructors must honor context cancellation. Native startup
+cancels pending construction after 20 seconds. A successful startup disarms that
+timer; the supplied context then follows the running engine's lifetime.
 
 ## Build it into the core
 

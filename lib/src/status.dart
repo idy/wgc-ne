@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'wireguard_key.dart';
 
 /// The system's VPN state, independent of optional core statistics.
 enum WgcConnectionState {
@@ -64,10 +64,7 @@ final class WgcCoreStatus {
     }
     if (key is String) {
       try {
-        final bytes = base64Decode(key);
-        if (bytes.length != 32 || base64Encode(bytes) != key) {
-          throw const WgcException(WgcErrorCode.invalidResponse);
-        }
+        validateWireGuardKey(key);
       } catch (_) {
         throw const WgcException(WgcErrorCode.invalidResponse);
       }

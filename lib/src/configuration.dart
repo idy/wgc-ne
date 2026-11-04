@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'wireguard_key.dart';
+
 const int wgcMaximumConfigurationBytes = 128 * 1024;
 
 /// Version 1 configuration. Keys and transport options are never included in toString.
@@ -22,7 +24,7 @@ final class WgcConfiguration {
         dnsServer = dnsServer ?? _defaultUpstreamDns(addresses),
         network = (network ?? WgcNetworkSettings())._resolveDefaults(addresses),
         singBox = singBox == null ? null : _freezeObject(singBox) {
-    _key(privateKey);
+    validateWireGuardKey(privateKey);
     if (addresses.isEmpty ||
         addresses.length > 8 ||
         peers.isEmpty ||
@@ -134,7 +136,7 @@ final class WgcPeer {
     if (id.isEmpty || id.length > 128 || id.runes.any((value) => value < 32)) {
       throw const FormatException('Peer identifier is invalid.');
     }
-    _key(publicKey);
+    validateWireGuardKey(publicKey);
     _endpoint(endpoint);
   }
 
@@ -159,26 +161,53 @@ final class WgcPeer {
 
 /// The core decides which transport names are registered; unknown names fail closed.
 final class WgcTransport {
-  WgcTransport({this.type = 'udp', Map<String, Object?> options = const {}})
-      : options = _freezeObject(options) {
+  WgcTransport({
+    this.type = 'udp',
+    Map<String, Object?> options = const {},
+    this.base,
+  }) : options = _freezeObject(options) {
     if (type.isEmpty ||
         type.length > 128 ||
         type.runes.any((value) => value <= 32)) {
       throw const FormatException('Transport name is invalid.');
     }
+    _validateDepth(0);
   }
 
-  factory WgcTransport.fromJson(Map<String, Object?> json) {
-    _rejectUnknownFields(json, const {'type', 'options'});
+  factory WgcTransport.fromJson(Map<String, Object?> json) =>
+      WgcTransport._fromJson(json, 0);
+
+  factory WgcTransport._fromJson(Map<String, Object?> json, int depth) {
+    _checkDepth(depth);
+    _rejectUnknownFields(json, const {'type', 'options', 'base'});
     return WgcTransport(
       type: _string(json['type']),
       options: json['options'] == null ? const {} : _object(json['options']),
+      base: json['base'] == null
+          ? null
+          : WgcTransport._fromJson(_object(json['base']), depth + 1),
     );
   }
 
   final String type;
   final Map<String, Object?> options;
-  Map<String, Object?> toJson() => {'type': type, 'options': options};
+  final WgcTransport? base;
+  Map<String, Object?> toJson() => {
+        'type': type,
+        'options': options,
+        if (base != null) 'base': base!.toJson(),
+      };
+
+  void _validateDepth(int depth) {
+    _checkDepth(depth);
+    base?._validateDepth(depth + 1);
+  }
+
+  static void _checkDepth(int depth) {
+    if (depth > 8) {
+      throw const FormatException('Transport nesting exceeds eight wrappers.');
+    }
+  }
 
   @override
   String toString() => 'WgcTransport()';
@@ -276,17 +305,6 @@ void _rejectUnknownFields(Map<String, Object?> json, Set<String> allowed) {
   if (!allowed.containsAll(json.keys)) {
     throw const FormatException('Configuration contains an unsupported field.');
   }
-}
-
-void _key(String value) {
-  try {
-    final decoded = base64Decode(value);
-    if (decoded.length == 32 && base64Encode(decoded) == value) {
-      return;
-    }
-  } catch (_) {/* Return only a fixed, non-secret validation error. */}
-  throw const FormatException(
-      'WireGuard keys must be canonical Base64 with 32 bytes.');
 }
 
 InternetAddress _ip(String value) {

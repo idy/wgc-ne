@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,26 +24,6 @@ import (
 	"github.com/sagernet/sing-tun"
 	M "github.com/sagernet/sing/common/metadata"
 )
-
-type countingTransport struct {
-	wgc.Transport
-	sent, received atomic.Uint64
-}
-
-func (c *countingTransport) WriteTo(b []byte, a netip.AddrPort) (int, error) {
-	n, err := c.Transport.WriteTo(b, a)
-	if n > 0 {
-		c.sent.Add(uint64(n))
-	}
-	return n, err
-}
-func (c *countingTransport) ReadFrom(b []byte) (int, netip.AddrPort, error) {
-	n, a, err := c.Transport.ReadFrom(b)
-	if n > 0 {
-		c.received.Add(uint64(n))
-	}
-	return n, a, err
-}
 
 func TestEncryptedTCPUDPAndCustomTransport(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -141,9 +120,9 @@ func TestEncryptedTCPUDPAndCustomTransport(t *testing.T) {
 		}
 	}()
 	registry := coreTransport.NewRegistry()
-	var counter *countingTransport
+	var counter *meteredTransport
 	if err := registry.RegisterWrapper("test-counter", func(_ context.Context, base wgc.Transport, _ json.RawMessage) (wgc.Transport, error) {
-		counter = &countingTransport{Transport: base}
+		counter = &meteredTransport{Transport: base}
 		return counter, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -191,7 +170,7 @@ func TestEncryptedTCPUDPAndCustomTransport(t *testing.T) {
 	if err != nil || string(reply[:n]) != "udp-payload" {
 		t.Fatalf("UDP round trip: bytes=%d err=%v", n, err)
 	}
-	if counter.sent.Load() == 0 || counter.received.Load() == 0 {
+	if counter == session.meter || counter.sentBytes.Load() == 0 || counter.receivedBytes.Load() == 0 {
 		t.Fatal("custom transport was bypassed")
 	}
 	status := session.Status()
