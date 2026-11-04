@@ -66,6 +66,126 @@ void main() {
     await api.dispose();
   });
 
+  test('Android client sends no Apple identifiers and maps denied consent',
+      () async {
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (call.method == 'start') {
+        throw PlatformException(
+            code: 'permission_denied', message: 'private detail');
+      }
+      return {'state': 'disconnected'};
+    });
+    final api =
+        WgcNe.android(channel: channel, localizedDescription: 'Test VPN');
+    final configuration = WgcConfiguration.fromJson(configurationJson());
+    await expectLater(api.start(configuration),
+        throwsA(isFailure(WgcErrorCode.permissionDenied)));
+    await api.status();
+    await api.stop();
+    await api.removeProfile();
+    expect(calls.first.arguments, {
+      'configuration': configuration.toJsonString(),
+      'localizedDescription': 'Test VPN',
+    });
+    for (final call in calls.skip(1)) {
+      expect(call.arguments, isEmpty);
+    }
+    await api.dispose();
+    expect(() => WgcNe.android(localizedDescription: ''),
+        throwsA(isFailure(WgcErrorCode.invalidArguments)));
+    expect(() => WgcNe.android(requestTimeout: Duration.zero),
+        throwsA(isFailure(WgcErrorCode.invalidArguments)));
+  });
+
+  for (final android in [false, true]) {
+    test('${android ? 'Android' : 'Apple'} constructor keeps shared bounds',
+        () async {
+      WgcNe create({
+        String? description,
+        Duration polling = const Duration(seconds: 1),
+        Duration timeout = const Duration(seconds: 45),
+      }) =>
+          android
+              ? WgcNe.android(
+                  localizedDescription: description,
+                  pollingInterval: polling,
+                  requestTimeout: timeout,
+                )
+              : WgcNe(
+                  providerBundleIdentifier: 'dev.example.consumer.tunnel',
+                  keychainAccessGroup: 'TEAM.dev.example.shared',
+                  localizedDescription: description,
+                  pollingInterval: polling,
+                  requestTimeout: timeout,
+                );
+
+      final defaults = create();
+      expect(defaults.localizedDescription, isNull);
+      expect(defaults.pollingInterval, const Duration(seconds: 1));
+      expect(defaults.requestTimeout, const Duration(seconds: 45));
+      await defaults.dispose();
+      for (final description in [null, 'x', 'x' * 255]) {
+        final lower = create(
+          description: description,
+          polling: const Duration(milliseconds: 100),
+          timeout: const Duration(microseconds: 1),
+        );
+        await lower.dispose();
+        final upper = create(
+          description: description,
+          polling: const Duration(minutes: 1),
+          timeout: const Duration(minutes: 2),
+        );
+        await upper.dispose();
+      }
+      for (final description in ['', 'x' * 256]) {
+        expect(() => create(description: description),
+            throwsA(isFailure(WgcErrorCode.invalidArguments)));
+      }
+      for (final polling in [
+        const Duration(microseconds: 99999),
+        const Duration(minutes: 1, microseconds: 1),
+      ]) {
+        expect(() => create(polling: polling),
+            throwsA(isFailure(WgcErrorCode.invalidArguments)));
+      }
+      for (final timeout in [
+        const Duration(microseconds: -1),
+        Duration.zero,
+        const Duration(minutes: 2, microseconds: 1),
+      ]) {
+        expect(() => create(timeout: timeout),
+            throwsA(isFailure(WgcErrorCode.invalidArguments)));
+      }
+    });
+  }
+
+  test('Apple identifiers remain required independently of shared options',
+      () async {
+    const valid = 'TEAM.dev.example.shared';
+    for (final invalid in ['', 'x' * 256, 'contains spaces', 'dev/example']) {
+      expect(
+          () => WgcNe(
+              providerBundleIdentifier: invalid, keychainAccessGroup: valid),
+          throwsA(isFailure(WgcErrorCode.invalidArguments)));
+      expect(
+          () => WgcNe(
+              providerBundleIdentifier: valid, keychainAccessGroup: invalid),
+          throwsA(isFailure(WgcErrorCode.invalidArguments)));
+    }
+    final api = WgcNe(
+      providerBundleIdentifier: 'x' * 255,
+      keychainAccessGroup: 'x' * 255,
+    );
+    await api.dispose();
+    final android = WgcNe.android();
+    expect(android.providerBundleIdentifier, isEmpty);
+    expect(android.keychainAccessGroup, isEmpty);
+    await android.dispose();
+  });
+
   test('native errors and unknown replies are redacted', () async {
     const secret = 'sensitive-native-error-detail';
     messenger.setMockMethodCallHandler(channel, (_) async {

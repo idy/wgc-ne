@@ -32,6 +32,44 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: core/go.sum
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+      - name: Check JNI callback ownership
+        run: |
+          clang -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pthread -fsanitize=address,undefined \
+            -Icore/cmd/wgc-ne-android -Icore/cmd/wgc-ne-android/testdata \
+            -idirafter "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include" \
+            core/cmd/wgc-ne-android/testdata/jni_bridge_test.c -o /tmp/wgc-ne-jni-test
+          /tmp/wgc-ne-jni-test
+      - run: flutter pub get
+      - run: dart run wgc_ne:build_core --platform android --ndk "$ANDROID_HOME/ndk/28.2.13676358" --config example/wgc_ne.core.yaml --output example/android/app/src/main/jniLibs
+      - run: flutter pub get
+        working-directory: example
+      - run: flutter build apk --release --target-platform android-arm64,android-x64
+        working-directory: example
+      - run: ./example/android/gradlew -p example/android :wgc_ne:testDebugUnitTest :wgc_ne:lintDebug --console=plain
+      - run: python3 -I tool/check_android_artifacts.py --jni-libs example/android/app/src/main/jniLibs --apk example/build/app/outputs/flutter-apk/app-release.apk
   apple:
     runs-on: macos-15
     steps:

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"runtime"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
@@ -22,9 +23,11 @@ import (
 	"github.com/sagernet/sing-box/protocol/tun"
 	singTun "github.com/sagernet/sing-tun"
 	singJSON "github.com/sagernet/sing/common/json"
+	"github.com/sagernet/sing/service"
 )
 
 func boxContext(ctx context.Context, config Config, session *Session) context.Context {
+	ctx = protectedBoxContext(ctx)
 	inputs, outputs := inbound.NewRegistry(), outbound.NewRegistry()
 	tun.RegisterInbound(inputs)
 	direct.RegisterOutbound(outputs)
@@ -88,7 +91,7 @@ func parseBoxConfig(ctx context.Context, config Config) (option.Options, error) 
 			return options, errors.New("invalid TUN configuration")
 		}
 		if value.AutoRoute || value.AutoRedirect {
-			return options, errors.New("NetworkExtension owns route installation")
+			return options, errors.New("the host VPN owns route installation")
 		}
 		if value.MTU != config.MTU || len(value.Address) != len(config.Addresses) {
 			return options, errors.New("TUN addresses and MTU must match network settings")
@@ -134,14 +137,29 @@ func parseBoxConfig(ctx context.Context, config Config) (option.Options, error) 
 // Validate performs parsing and factory registration checks without opening a
 // socket, creating an OS TUN, or changing host configuration.
 func Validate(config Config) (NetworkSettings, error) {
+	return validateForPlatform(context.Background(), config, runtime.GOOS)
+}
+
+func validationBoxContext(ctx context.Context, config Config, goos string) context.Context {
+	if goos == "android" {
+		// Match runtime capabilities before constructing sing-box so validation
+		// never attempts Android's forbidden netlink monitor. This closed stub
+		// cannot duplicate a descriptor or open a TUN, even if used by mistake.
+		platform := &suppliedTUNPlatform{fd: -1, android: true, ctx: ctx}
+		ctx = service.ContextWith[adapter.PlatformInterface](ctx, platform)
+	}
+	return boxContext(ctx, config, nil)
+}
+
+func validateForPlatform(ctx context.Context, config Config, goos string) (NetworkSettings, error) {
 	config, err := NormalizeConfig(config)
 	if err != nil {
 		return NetworkSettings{}, err
 	}
-	if err := transportRegistryValidate(config); err != nil {
+	if err := transportRegistryValidate(ctx, config); err != nil {
 		return NetworkSettings{}, err
 	}
-	ctx := boxContext(context.Background(), config, nil)
+	ctx = validationBoxContext(ctx, config, goos)
 	options, err := parseBoxConfig(ctx, config)
 	if err != nil {
 		return NetworkSettings{}, err

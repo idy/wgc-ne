@@ -1,0 +1,6 @@
+<resources>
+    <string name="wgc_ne_channel">VPN connection</string>
+    <string name="wgc_ne_connecting">Connecting VPN</string>
+    <string name="wgc_ne_connected">VPN is connected</string>
+    <string name="wgc_ne_disconnect">Disconnect</string>
+</resources>

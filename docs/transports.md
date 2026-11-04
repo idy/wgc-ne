@@ -1,8 +1,9 @@
 # Custom transports
 
-A transport implementation runs in the Go core inside the PacketTunnel process.
-Dart selects its registered name and supplies JSON options. No packets cross a
-Flutter method channel, and iOS does not dynamically load a Go plugin.
+A transport implementation runs in the Go core inside the Apple PacketTunnel
+process or Android VPN service. Dart selects its registered name and supplies
+JSON options. No packets cross a Flutter method channel, and transports are
+compiled into the native core.
 
 ## Register a factory or wrapper
 
@@ -69,8 +70,8 @@ dart run wgc_ne:build_core --platform ios --config wgc_ne.core.yaml --output bui
 ```
 
 The builder generates a main package importing the extension, pins dependency
-versions, compiles the selected Apple architectures, and packages a static
-XCFramework. Link that exact artifact into the extension target, not only Runner.
+versions, and compiles the selected native architectures. Apple builds package
+a static XCFramework; Android builds package ABI-specific JNI shared libraries. Link that exact artifact into the extension target, not only Runner.
 A missing registration is an error, never a fallback to plain UDP.
 
 ## Select it from configuration
@@ -86,8 +87,12 @@ A missing registration is an error, never a fallback to plain UDP.
 ```
 
 An omitted wrapper base means UDP. At most eight wrapper layers are accepted.
-The default UDP transport supports the optional `listen` address; endpoints stay
-in the declared peers. A factory must not receive `base`.
+The default UDP transport supports the optional `listen` address, with a numeric
+port from 0 through 65535. Empty listen selects `:0`. Android and contexts with a
+socket protector require a numeric or empty host; preflight rejects hostname
+listeners before installing the TUN because their DNS resolution would precede
+socket protection. Unprotected Apple contexts retain hostname-listener support.
+Peer endpoints stay in the declared peers. A factory must not receive `base`.
 
 The repository includes a transparent byte-counting wrapper in
 [`example/counter`](../example/counter/register/register.go). It changes no packet
@@ -105,6 +110,30 @@ The standard WGC NE outbound transports IP packets. A Transport wraps already
 encrypted WireGuard datagrams; it is not a plaintext IP-payload or relay-prefix
 hook. Applications with an additional payload protocol must provide that adapter
 in their native core as well; wrapping UDP alone does not implement it.
+
+## Android socket protection
+
+Android factories and wrappers must protect every outer socket before bind,
+connect, or send, using the context passed to their constructor:
+
+```go
+listener := net.ListenConfig{Control: transport.SocketControl(ctx)}
+conn, err := listener.ListenPacket(ctx, "udp", ":0")
+
+dialer := net.Dialer{Control: transport.SocketControl(ctx)}
+stream, err := dialer.DialContext(ctx, "tcp", "203.0.113.10:443")
+```
+
+A raw-socket implementation calls `transport.ProtectSocket(ctx, fd)` and closes
+its own socket if protection fails. Compose this with other socket controls.
+Apply protection to reconnects, auxiliary sockets, and custom DNS as well. The
+callback borrows the descriptor only for the duration of the call and fails
+closed when `VpnService.protect` fails. The same helpers are no-ops on Apple when
+no protector is supplied. Factories are trusted native code; the registry cannot
+intercept sockets opened by arbitrary dependencies.
+
+Build the same extension configuration using `--platform android`; package its
+`libwgcne.so` files as described in [Android integration](android-integration.md).
 
 ## Distribution
 

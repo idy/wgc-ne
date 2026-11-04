@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"runtime"
 	"sync"
 
 	wgc "github.com/idy/wgc"
@@ -54,6 +55,9 @@ type Status struct {
 // NewSession opens the encrypted transport and userspace peer stacks. It does
 // not create an OS TUN, change host routes, or perform host DNS resolution.
 func NewSession(ctx context.Context, config Config, options SessionOptions) (*Session, error) {
+	if runtime.GOOS == "android" && !transport.HasSocketProtector(ctx) {
+		return nil, transport.ErrSocketProtectorRequired
+	}
 	config, err := NormalizeConfig(config)
 	if err != nil {
 		return nil, err

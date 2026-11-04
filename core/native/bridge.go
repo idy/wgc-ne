@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/idy/wgc-ne/core"
+	"github.com/idy/wgc-ne/core/transport"
 )
 
 const ABIVersion = 1
@@ -108,20 +109,72 @@ func (b *Bridge) Start(fd int, raw []byte) string {
 	return b.start(fd, raw, startupTimeout)
 }
 
+// StartWithSocketProtector consumes fd and the optional release callback on
+// EVERY path. It releases the protector after failed startup, engine shutdown,
+// or Stop (exactly once). Protection callbacks may run concurrently until then.
+// The C ABI v1 Start remains unchanged; Android JNI uses this entrypoint.
+func (b *Bridge) StartWithSocketProtector(fd int, raw []byte, protector transport.SocketProtector, release func()) string {
+	return b.startWithSocketProtector(fd, raw, startupTimeout, protector, release)
+}
+
 func (b *Bridge) start(fd int, raw []byte, timeout time.Duration) string {
+	return b.startWithSocketProtector(fd, raw, timeout, nil, nil)
+}
+
+// A protector may own a JNI global reference. Engine.Close must finish before
+// releasing it; release must also be safe against a callback already in flight.
+type releasingEngine struct {
+	tunnelEngine
+	release func()
+}
+
+func (e *releasingEngine) Close() error {
+	err := e.tunnelEngine.Close()
+	e.release()
+	return err
+}
+
+type terminatingEngine interface {
+	tunnelEngine
+	Done() <-chan struct{}
+}
+
+func engineWithRelease(engine terminatingEngine, release func()) tunnelEngine {
+	if release == nil {
+		return engine
+	}
+	// Core failures can close the engine before the host calls Stop. Retire the
+	// protector promptly, while keeping the handle available for safe status.
+	go func() { <-engine.Done(); release() }()
+	return &releasingEngine{tunnelEngine: engine, release: release}
+}
+
+func (b *Bridge) startWithSocketProtector(fd int, raw []byte, timeout time.Duration, protector transport.SocketProtector, release func()) string {
+	transferred := false
+	if release != nil {
+		release = sync.OnceFunc(release)
+		defer func() {
+			if !transferred {
+				release()
+			}
+		}()
+	}
 	config, err := core.DecodeConfig(raw)
 	if err != nil {
 		core.CloseOwnedFD(fd)
 		return failed("invalid_configuration", "Invalid tunnel configuration")
 	}
 	ctx, startup := newStartupGate(timeout)
+	ctx = transport.WithSocketProtector(ctx, protector)
 	engine, err := core.Open(ctx, fd, config, core.SessionOptions{})
 	if err != nil {
 		startup.timer.Stop()
 		startup.abort()
 		return failed("start_failed", "The tunnel core could not start")
 	}
-	id, ok := b.publish(engine, startup)
+	owned := engineWithRelease(engine, release)
+	transferred = true
+	id, ok := b.publish(owned, startup)
 	if !ok {
 		return failed("start_failed", "The tunnel core could not start")
 	}

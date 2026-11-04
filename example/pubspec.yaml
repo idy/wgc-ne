@@ -1,7 +1,7 @@
 name: wgc_ne_example
-description: Minimal consumer of the WGC NE Apple Network Extension plugin.
+description: Minimal consumer of the WGC NE Android and Apple tunnel plugin.
 publish_to: none
-version: 0.1.0+1
+version: 0.2.0+1
 environment:
   sdk: '>=3.3.0 <4.0.0'
 dependencies:

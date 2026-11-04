@@ -51,7 +51,7 @@ def main():
     parser.add_argument('--provider-id', help='Defaults to the app ID plus .PacketTunnel')
     parser.add_argument('--keychain-group', help='Suffix after AppIdentifierPrefix; defaults to app ID plus .wgc-ne')
     parser.add_argument('--target', default='WGCPacketTunnel')
-    parser.add_argument('--sdk', type=Path, help='Optional local SDK checkout; default is GitHub v0.1.0')
+    parser.add_argument('--sdk', type=Path, help='Optional local SDK checkout; default is GitHub v0.2.0')
     args = parser.parse_args()
     project = args.project.resolve()
     core = args.core.resolve()
@@ -127,7 +127,7 @@ def main():
             parser.error('Local SDK Package.swift is missing')
         package_ref = add('XCLocalSwiftPackageReference', relativePath=os.path.relpath(sdk_path, ios))
     else:
-        package_ref = add('XCRemoteSwiftPackageReference', repositoryURL='https://github.com/idy/wgc-ne.git', requirement={'kind': 'exactVersion', 'version': '0.1.0'})
+        package_ref = add('XCRemoteSwiftPackageReference', repositoryURL='https://github.com/idy/wgc-ne.git', requirement={'kind': 'exactVersion', 'version': '0.2.0'})
     owner.setdefault('packageReferences', []).append(package_ref)
     package_product = add('XCSwiftPackageProductDependency', package=package_ref, productName='WGCNE')
     sources = add('PBXSourcesBuildPhase', buildActionMask='2147483647', runOnlyForDeploymentPostprocessing='0', files=[add('PBXBuildFile', fileRef=source_ref), add('PBXBuildFile', fileRef=adapter_ref)])

@@ -1,6 +1,6 @@
 # WGC NE architecture
 
-WGC NE is an independent Flutter plugin and Apple Network Extension SDK. Its Go
+WGC NE is an independent Flutter plugin and native Android/Apple SDK. Its Go
 core pins `github.com/idy/wgc` at `v0.2.1-0.20261103184829-50549511c059` for
 authenticated WireGuard packets and uses sing-box v1.14.4 for userspace TCP/UDP,
 TUN flow handling, DNS, and routing.
@@ -19,6 +19,13 @@ It is not an official WireGuard or sing-box application.
   access-group name, and owning app identifier. Both targets need the matching
   Keychain entitlement. No private keys or full configuration go into logs,
   status responses, or `NETunnelProviderProtocol.providerConfiguration`.
+- Android uses an app-owned foreground `VpnService`, JNI, and the same Go core.
+  The plugin handles consent and Activity changes. The service serializes native
+  start/stop, owns the TUN and core handle, and polls core health independently of
+  Flutter. It runs with Android's default underlying network and protects native
+  sockets before use. Configuration stays in memory; `START_NOT_STICKY` and
+  disabled always-on support prevent restart without a configuration. See
+  [Android integration](android-integration.md).
 - The SDK includes only standard UDP. Custom Go transport factories/wrappers are
   compiled into the extension's core; Flutter chooses the registered name and
   supplies JSON options. Unknown names fail closed.
@@ -63,7 +70,7 @@ allowed by the remote WireGuard server.
 Optional `sing_box` replaces the generated sing-box configuration. The supported
 built-in registrations are TUN, direct, WGC, UDP/TCP DNS, and FakeIP DNS. Exactly
 one TUN inbound is required and its addresses/MTU must match the outer settings;
-auto route installation is disabled because NetworkExtension owns it. A WGC
+auto route installation is disabled because the native OS service owns it. A WGC
 outbound uses `{"type":"wgc","tag":"vpn","peer":"exit","resolver":"dns-remote"}`.
 Custom sing-box configuration does not grant access to undeclared WGC peers.
 The generated TUN uses the gVisor stack, which accepts host prefixes such as
@@ -93,7 +100,10 @@ void WGCNEFree(char *value);
 Validate does no networking and returns public network settings:
 `{addresses:["10.7.0.2/32"],mtu:1280,dns_servers:["198.18.0.2"],included_routes:["0.0.0.0/0"],excluded_routes:["203.0.113.10/32"]}`.
 Start ALWAYS takes ownership of `owned_fd`, including invalid JSON and all error
-paths. The provider passes a duplicate of its own utun descriptor. Start returns
+paths. Apple passes a duplicate of its utun descriptor. Android's JNI start
+passes a duplicate of the service-owned TUN descriptor and supplies a
+`VpnService.protect(fd)` callback. A global JNI reference keeps that callback
+alive until native shutdown finishes; failed starts release it as well. Start returns
 `{handle:1}` only after both the WGC session and sing-box start. Pending native
 startup cancels its context after 20 seconds; custom transport constructors must
 honor cancellation. Successful startup disarms that timer, so it does not limit
@@ -114,6 +124,12 @@ Channel `dev.idy.wgc_ne/methods`. Calls:
 - `status`: `{providerBundleIdentifier}`
 - `removeProfile`: `{providerBundleIdentifier}` (explicit user action only).
 
+`WgcNe.android` uses the same calls without either Apple identifier; `start`
+contains `{configuration, localizedDescription?}` and the other argument maps
+are empty. Android `start` waits for matching VPN consent and local core startup.
+`permission_denied` is a stable redacted error. `removeProfile` stops the
+memory-only session without revoking system consent.
+
 Status is a dictionary with `state`: `disconnected`, `connecting`, `connected`,
 `disconnecting`, `reasserting`, or `invalid`, plus optional `core` containing the
 redacted ABI status. A Dart status stream may poll the native status only while
@@ -133,7 +149,8 @@ its chosen `WGCCore.xcframework` and compiles the Go adapter separately.
   registry, native bridge, and C entrypoint.
 - `Package.swift`, `apple/Sources/WGCNE/`: reusable native Swift SDK.
 - `apple/GoAdapter/`: C header and Swift adapter for a generated WGCCore XCFramework.
-- `lib/`, `ios/`, `macos/`: Flutter-facing API and platform plugins.
+- `lib/`, `android/`, `ios/`, `macos/`: Flutter-facing API and platform plugins.
+- `core/cmd/wgc-ne-android/`: JNI entrypoint and socket-protection callback bridge.
 - `bin/`, `tool/`: custom-core builder and extension scaffolding tools.
 - `example/`: minimal Flutter consumer and extension integration.
 - `site/`: dependency-free project page for `wgc-ne.idy.dev`.

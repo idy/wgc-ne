@@ -1,8 +1,32 @@
 # Example app
 
-This is a small Flutter consumer, with an embedded iOS PacketTunnel target using
-the same WGCNE Swift SDK and generated Go core. It contains no usable service
+This is a small Flutter consumer with an Android VPN service and an embedded
+iOS PacketTunnel target using the same Go core. It contains no usable service
 credentials and does not simulate a successful connection.
+
+## Android
+
+Build the two default Android ABIs (arm64-v8a and x86_64) from the repository root,
+with NDK r28+ available through `--ndk` or `ANDROID_HOME`:
+
+```bash
+dart run wgc_ne:build_core --platform android --config example/wgc_ne.core.yaml --output example/android/app/src/main/jniLibs
+```
+
+Then run `flutter pub get` in `example/`, followed by:
+
+```bash
+flutter build apk --release --target-platform android-arm64,android-x64
+```
+
+Android uses `WgcNe.android`, hides the Apple identifier fields, and requests
+system VPN consent on Connect. The foreground notification has a Disconnect
+action. Configuration stays in memory; reconnect explicitly after process death.
+Removing the session does not revoke system VPN consent. See
+[Android integration](../docs/android-integration.md) for packaging, permissions,
+custom socket protection, and validation limits.
+
+## iOS
 
 From the repository root, fetch dependencies and build the native core:
 
