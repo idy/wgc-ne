@@ -30,6 +30,20 @@ def openstep(value, level=0):
     return text if re.fullmatch(r'[A-Za-z0-9_./]+', text) else json.dumps(text, ensure_ascii=False)
 
 
+def load_build_settings(project, configuration):
+    result = subprocess.run([
+        'xcodebuild', '-project', str(project), '-target', 'Runner',
+        '-configuration', configuration, '-sdk', 'iphoneos',
+        '-showBuildSettings', '-json', '-disableAutomaticPackageResolution',
+        '-skipPackageUpdates',
+    ], check=True, capture_output=True, text=True, timeout=60)
+    targets = json.loads(result.stdout)
+    matches = [target['buildSettings'] for target in targets if target.get('target') == 'Runner']
+    if len(matches) != 1 or not isinstance(matches[0], dict):
+        raise ValueError('Expected resolved Runner build settings')
+    return matches[0]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--project', required=True, type=Path, help='Path to Runner.xcodeproj')
@@ -59,13 +73,26 @@ def main():
     app_id = runners[0]
     app = objects[app_id]
     app_configs = objects[app['buildConfigurationList']]['buildConfigurations']
-    release = next((objects[c] for c in app_configs if objects[c]['name'] == 'Release'), objects[app_configs[0]])
-    bundle = release['buildSettings']['PRODUCT_BUNDLE_IDENTIFIER']
-    if not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', bundle):
-        parser.error('Runner needs a concrete bundle identifier')
-    provider = args.provider_id or bundle + '.PacketTunnel'
-    if not provider.startswith(bundle + '.') or not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', provider):
-        parser.error('Provider identifier must belong to Runner')
+    if not app_configs:
+        parser.error('Runner needs at least one build configuration')
+    resolved_settings = {}
+    providers = {}
+    for reference in app_configs:
+        name = objects[reference]['name']
+        try:
+            effective = load_build_settings(project, name)
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+            parser.error('Cannot resolve Runner build settings for ' + name + '; no integration files changed')
+        bundle = effective.get('PRODUCT_BUNDLE_IDENTIFIER', '')
+        if not isinstance(bundle, str) or not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', bundle):
+            parser.error('Runner needs a concrete bundle identifier in every configuration')
+        provider = args.provider_id or bundle + '.PacketTunnel'
+        if not provider.startswith(bundle + '.') or not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', provider):
+            parser.error('Provider identifier must belong to Runner in every configuration')
+        resolved_settings[reference] = effective
+        providers[reference] = provider
+    release = next((reference for reference in app_configs if objects[reference]['name'] == 'Release'), app_configs[0])
+    bundle = resolved_settings[release]['PRODUCT_BUNDLE_IDENTIFIER']
     keychain = args.keychain_group or bundle + '.wgc-ne'
     if not re.fullmatch(r'[A-Za-z0-9.-]+', keychain):
         parser.error('Keychain group must be a suffix without a team prefix or variables')
@@ -111,11 +138,15 @@ def main():
     for reference in app_configs:
         original = objects[reference]
         settings = original['buildSettings']
-        entitlement_path = settings.get('CODE_SIGN_ENTITLEMENTS', 'Runner/Runner.entitlements')
-        entitlement_path = entitlement_path.removeprefix('$(SRCROOT)/')
+        effective = resolved_settings[reference]
+        entitlement_path = effective.get('CODE_SIGN_ENTITLEMENTS') or 'Runner/Runner.entitlements'
+        if not isinstance(entitlement_path, str) or '\0' in entitlement_path or re.search(r'\$[({]', entitlement_path):
+            parser.error('App entitlement path could not be resolved; no files changed')
         path = (ios / entitlement_path).resolve()
         if ios not in path.parents:
             parser.error('App entitlement path is outside the iOS project')
+        if not effective.get('CODE_SIGN_ENTITLEMENTS'):
+            settings['CODE_SIGN_ENTITLEMENTS'] = os.path.relpath(path, ios)
         current = entitlement_updates.get(path)
         if current is None:
             current = plistlib.loads(path.read_bytes()) if path.exists() else {}
@@ -126,19 +157,18 @@ def main():
             if value not in values:
                 values.append(value)
         entitlement_updates[path] = current
-        settings['CODE_SIGN_ENTITLEMENTS'] = entitlement_path
-        minimum = settings.get('IPHONEOS_DEPLOYMENT_TARGET', '0')
+        minimum = effective.get('IPHONEOS_DEPLOYMENT_TARGET', '0')
         if re.fullmatch(r'[0-9]+(?:\.[0-9]+)*', minimum) and int(minimum.split('.')[0]) < 15:
             settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
         extension = {
             'APPLICATION_EXTENSION_API_ONLY': 'YES', 'CLANG_ENABLE_MODULES': 'YES',
-            'CODE_SIGN_STYLE': settings.get('CODE_SIGN_STYLE', 'Automatic'),
+            'CODE_SIGN_STYLE': effective.get('CODE_SIGN_STYLE', 'Automatic'),
             'CODE_SIGN_ENTITLEMENTS': args.target + '/PacketTunnel.entitlements',
-            'DEVELOPMENT_TEAM': settings.get('DEVELOPMENT_TEAM', ''),
+            'DEVELOPMENT_TEAM': effective.get('DEVELOPMENT_TEAM', ''),
             'CURRENT_PROJECT_VERSION': '$(FLUTTER_BUILD_NUMBER)',
             'MARKETING_VERSION': '$(FLUTTER_BUILD_NAME)',
             'GENERATE_INFOPLIST_FILE': 'NO', 'INFOPLIST_FILE': args.target + '/Info.plist',
-            'IPHONEOS_DEPLOYMENT_TARGET': '15.0', 'PRODUCT_BUNDLE_IDENTIFIER': provider,
+            'IPHONEOS_DEPLOYMENT_TARGET': '15.0', 'PRODUCT_BUNDLE_IDENTIFIER': providers[reference],
             'PRODUCT_NAME': '$(TARGET_NAME)', 'SKIP_INSTALL': 'YES',
             'SUPPORTED_PLATFORMS': 'iphoneos iphonesimulator', 'SWIFT_VERSION': '5.0',
             'TARGETED_DEVICE_FAMILY': '1,2',
@@ -170,7 +200,10 @@ def main():
     shutil.copyfile(project_file, backup)
     project_file.write_text('// !$*UTF8*$!\n' + openstep(data) + '\n')
     subprocess.run(['plutil', '-lint', str(project_file)], check=True)
-    print('Added ' + provider)
+    print('Added ' + providers[release])
+    if len(set(providers.values())) > 1:
+        for reference in app_configs:
+            print('Provider (' + objects[reference]['name'] + '): ' + providers[reference])
     print('Runtime Keychain group: resolve AppIdentifierPrefix + ' + keychain)
     print('Both targets still require your provisioning/signing configuration.')
 

@@ -1,7 +1,8 @@
 # WGC NE
 
 A Flutter plugin and Apple Network Extension SDK for applications that want
-WireGuard sessions with an application-owned transport.
+WireGuard sessions with an application-owned transport. The Flutter plugin
+supports iOS and macOS; Android is not implemented.
 
 [Project page](https://wgc-ne.idy.dev/) · [Apple integration](docs/apple-integration.md) ·
 [Custom transports](docs/transports.md) · [Architecture and ABI](docs/architecture.md)
@@ -144,8 +145,10 @@ swift test
 ```
 
 Go tests create local encrypted peers and userspace TCP/UDP endpoints. They do
-not change your host's routes. Signed device and production-network acceptance
-are separate from these checks; see [validation](docs/validation.md).
+not change your host's routes. [Contributing](CONTRIBUTING.md) also covers the iOS
+setup regression tests and native source checks. Signed device and
+production-network acceptance are separate from these checks; see
+[validation](docs/validation.md).
 
 ## License
 

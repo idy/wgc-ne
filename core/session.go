@@ -15,7 +15,6 @@ import (
 
 type peerDevice struct {
 	device sg.Device
-	writer *wgc.PeerWriter
 	key    wgc.Key
 }
 type SessionOptions struct {
@@ -27,18 +26,19 @@ type SessionOptions struct {
 }
 
 type Session struct {
-	conn    *wgc.Conn
-	meter   *meteredTransport
-	peers   map[string]*peerDevice
-	keys    map[wgc.Key]*peerDevice
-	ctx     context.Context
-	cancel  context.CancelFunc
-	done    chan struct{}
-	once    sync.Once
-	workers sync.WaitGroup
-	mu      sync.Mutex
-	err     error
-	status  Status
+	conn      *wgc.Conn
+	meter     *meteredTransport
+	peers     map[string]*peerDevice
+	keys      map[wgc.Key]*peerDevice
+	ctx       context.Context
+	cancel    context.CancelFunc
+	done      chan struct{}
+	once      sync.Once
+	senders   sync.WaitGroup
+	receiver  sync.WaitGroup
+	mu        sync.Mutex
+	err       error
+	publicKey string
 }
 
 type Status struct {
@@ -94,7 +94,7 @@ func NewSession(ctx context.Context, config Config, options SessionOptions) (*Se
 		return nil, err
 	}
 	runCtx, cancel := context.WithCancel(ctx)
-	session := &Session{conn: conn, meter: meter, peers: make(map[string]*peerDevice), keys: make(map[wgc.Key]*peerDevice), ctx: runCtx, cancel: cancel, done: make(chan struct{}), status: Status{State: "running", PublicKey: conn.PublicKey().String(), CoreVersion: SingBoxVersion}}
+	session := &Session{conn: conn, meter: meter, peers: make(map[string]*peerDevice), keys: make(map[wgc.Key]*peerDevice), ctx: runCtx, cancel: cancel, done: make(chan struct{}), publicKey: conn.PublicKey().String()}
 	addresses := make([]netip.Prefix, 0, len(config.Addresses))
 	for _, address := range config.Addresses {
 		prefix, _ := netip.ParsePrefix(address)
@@ -107,7 +107,7 @@ func NewSession(ctx context.Context, config Config, options SessionOptions) (*Se
 			return nil, err
 		}
 		key, _ := parseKey(peer.PublicKey)
-		entry := &peerDevice{device: device, key: key, writer: conn.PeerWriter(key)}
+		entry := &peerDevice{device: device, key: key}
 		session.peers[peer.ID] = entry
 		session.keys[key] = entry
 		if err := device.Start(); err != nil {
@@ -116,10 +116,10 @@ func NewSession(ctx context.Context, config Config, options SessionOptions) (*Se
 		}
 	}
 	for _, peer := range session.peers {
-		session.workers.Add(1)
+		session.senders.Add(1)
 		go session.send(peer, int(config.MTU))
 	}
-	session.workers.Add(1)
+	session.receiver.Add(1)
 	go session.receive()
 	go func() { <-runCtx.Done(); _ = session.Close() }()
 	return session, nil
@@ -134,7 +134,7 @@ func (s *Session) fail(err error) {
 	s.cancel()
 }
 func (s *Session) send(peer *peerDevice, mtu int) {
-	defer s.workers.Done()
+	defer s.senders.Done()
 	buffers, sizes := [][]byte{make([]byte, mtu)}, []int{0}
 	for {
 		count, err := peer.device.Read(buffers, sizes, 0)
@@ -144,23 +144,24 @@ func (s *Session) send(peer *peerDevice, mtu int) {
 			}
 			return
 		}
-		if count > 0 {
-			if _, err := peer.writer.Write(buffers[0][:sizes[0]]); err != nil {
-				if s.ctx.Err() == nil {
-					s.fail(err)
-				}
-				return
+		// Keep draining stack output during shutdown: an in-flight inbound
+		// injection may need room for its response before the device can close.
+		if count > 0 && s.ctx.Err() == nil {
+			// Admission denial and blocking apply only to this peer; later packets retry.
+			if _, _, err := s.conn.WriteTo(buffers[0][:sizes[0]], peer.key); err != nil && !errors.Is(err, wgc.ErrPeerNotFound) && !errors.Is(err, wgc.ErrPeerBlocked) {
+				s.fail(err)
 			}
 		}
 	}
 }
 func (s *Session) receive() {
-	defer s.workers.Done()
+	defer s.receiver.Done()
 	for packet := range s.conn.ReadQueue() {
-		if peer := s.keys[packet.From().StaticPubKey()]; peer != nil {
-			// The stack can retain packet backing memory after injection.
-			payload := append([]byte(nil), packet.Data...)
-			_, _ = peer.device.Write([][]byte{payload}, 0)
+		if peer := s.keys[packet.From().StaticPubKey()]; peer != nil && s.ctx.Err() == nil {
+			// The pinned sing-box stackDevice.Write synchronously copies input
+			// into gVisor-owned buffers via buffer.MakeWithData. Keep the WGC
+			// packet alive until Write returns, then release its pooled storage.
+			_, _ = peer.device.Write([][]byte{packet.Data}, 0)
 		}
 		packet.Release()
 	}
@@ -193,16 +194,19 @@ func (s *Session) listenPeer(ctx context.Context, id string, remote M.Socksaddr)
 	return peer.device.ListenPacket(ctx, remote)
 }
 func (s *Session) Status() Status {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.status.BytesSent = s.meter.sentBytes.Load()
-	s.status.BytesReceived = s.meter.receivedBytes.Load()
-	s.status.PacketsSent = s.meter.sentPackets.Load()
-	s.status.PacketsReceived = s.meter.receivedPackets.Load()
-	if s.ctx.Err() != nil {
-		s.status.State = "stopped"
+	status := Status{
+		State:           "running",
+		PublicKey:       s.publicKey,
+		BytesSent:       s.meter.sentBytes.Load(),
+		BytesReceived:   s.meter.receivedBytes.Load(),
+		PacketsSent:     s.meter.sentPackets.Load(),
+		PacketsReceived: s.meter.receivedPackets.Load(),
+		CoreVersion:     SingBoxVersion,
 	}
-	return s.status
+	if s.ctx.Err() != nil {
+		status.State = "stopped"
+	}
+	return status
 }
 func (s *Session) Done() <-chan struct{} { return s.done }
 func (s *Session) Err() error            { s.mu.Lock(); defer s.mu.Unlock(); return s.err }
@@ -210,10 +214,13 @@ func (s *Session) Close() error {
 	s.once.Do(func() {
 		s.cancel()
 		_ = s.conn.Close()
+		// Join all inbound injections before gVisor detaches its dispatcher.
+		// Senders continue draining responses until device.Close unblocks Read.
+		s.receiver.Wait()
 		for _, peer := range s.peers {
 			_ = peer.device.Close()
 		}
-		s.workers.Wait()
+		s.senders.Wait()
 		close(s.done)
 	})
 	return nil

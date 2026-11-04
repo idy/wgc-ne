@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/netip"
 	"regexp"
+	"slices"
 
 	wgc "github.com/idy/wgc"
 	"github.com/idy/wgc-ne/core/transport"
@@ -18,6 +19,10 @@ import (
 const Version = "0.1.0"
 const SingBoxVersion = "1.14.4"
 const MaxConfigBytes = 128 << 10
+
+const maxPeers = 32
+const maxNetworkRoutes = 1024
+const maxExcludedRoutes = maxNetworkRoutes + maxPeers
 
 type Peer struct {
 	ID        string `json:"id"`
@@ -90,18 +95,23 @@ func NormalizeConfig(config Config) (Config, error) {
 		return fail("one to eight local addresses required")
 	}
 	var has4, has6 bool
+	addresses := make(map[netip.Addr]bool, len(config.Addresses))
 	for _, value := range config.Addresses {
 		prefix, err := netip.ParsePrefix(value)
 		if err != nil || prefix.Addr().IsUnspecified() || prefix.Addr().IsMulticast() || prefix.Addr().Is4In6() {
 			return fail("invalid local address prefix")
 		}
+		if addresses[prefix.Addr()] {
+			return fail("duplicate local address")
+		}
+		addresses[prefix.Addr()] = true
 		if prefix.Addr().Is4() {
 			has4 = true
 		} else {
 			has6 = true
 		}
 	}
-	if len(config.Peers) == 0 || len(config.Peers) > 32 {
+	if len(config.Peers) == 0 || len(config.Peers) > maxPeers {
 		return fail("one to 32 peers required")
 	}
 	ids := map[string]bool{}
@@ -151,20 +161,14 @@ func NormalizeConfig(config Config) (Config, error) {
 	if len(config.Network.Addresses) > 0 || config.Network.MTU != 0 {
 		return fail("network addresses and MTU are derived from top-level fields")
 	}
-	if len(config.Network.DNSServers) == 0 {
+	if config.Network.DNSServers == nil {
 		if has4 {
 			config.Network.DNSServers = []string{"198.18.0.2"}
 		} else {
 			config.Network.DNSServers = []string{"2001:2::2"}
 		}
 	}
-	for _, value := range config.Network.DNSServers {
-		ip, err := netip.ParseAddr(value)
-		if err != nil || ip.Zone() != "" || ip.IsUnspecified() || ip.IsMulticast() || (ip.Is4() && !has4) || (ip.Is6() && !has6) {
-			return fail("invalid tunnel DNS address")
-		}
-	}
-	if len(config.Network.IncludedRoutes) == 0 {
+	if config.Network.IncludedRoutes == nil {
 		if has4 {
 			config.Network.IncludedRoutes = append(config.Network.IncludedRoutes, "0.0.0.0/0")
 		}
@@ -172,14 +176,31 @@ func NormalizeConfig(config Config) (Config, error) {
 			config.Network.IncludedRoutes = append(config.Network.IncludedRoutes, "::/0")
 		}
 	}
-	for _, routes := range [][]string{config.Network.IncludedRoutes, config.Network.ExcludedRoutes} {
-		if len(routes) > 2048 {
-			return fail("too many routes")
+	if len(config.Network.IncludedRoutes) > maxNetworkRoutes || len(config.Network.ExcludedRoutes) > maxNetworkRoutes {
+		return fail("too many routes")
+	}
+	// Validate the final ABI settings, including all derived peer exclusions.
+	settings := config.NetworkSettings()
+	if len(settings.ExcludedRoutes) > maxExcludedRoutes {
+		return fail("too many derived excluded routes")
+	}
+	if len(settings.DNSServers) == 0 || len(settings.DNSServers) > 8 {
+		return fail("one to eight tunnel DNS addresses required")
+	}
+	for _, value := range settings.DNSServers {
+		ip, err := netip.ParseAddr(value)
+		if err != nil || ip.Zone() != "" || ip.IsUnspecified() || ip.IsMulticast() || ip.Is4In6() || (ip.Is4() && !has4) || (ip.Is6() && !has6) {
+			return fail("invalid tunnel DNS address")
 		}
+	}
+	for index, routes := range [][]string{settings.IncludedRoutes, settings.ExcludedRoutes} {
 		for _, value := range routes {
 			prefix, err := netip.ParsePrefix(value)
 			if err != nil || prefix != prefix.Masked() || prefix.Addr().Is4In6() {
 				return fail("invalid network route")
+			}
+			if index == 0 && ((prefix.Addr().Is4() && !has4) || (prefix.Addr().Is6() && !has6)) {
+				return fail("included route requires a configured address family")
 			}
 		}
 	}
@@ -188,20 +209,24 @@ func NormalizeConfig(config Config) (Config, error) {
 
 func (config Config) NetworkSettings() NetworkSettings {
 	settings := config.Network
-	settings.Addresses = append([]string(nil), config.Addresses...)
+	settings.Addresses = slices.Clone(config.Addresses)
 	settings.MTU = config.MTU
-	settings.IncludedRoutes = append([]string(nil), settings.IncludedRoutes...)
-	settings.ExcludedRoutes = append([]string(nil), settings.ExcludedRoutes...)
-	seen := map[string]bool{}
+	settings.DNSServers = slices.Clone(settings.DNSServers)
+	settings.IncludedRoutes = slices.Clone(settings.IncludedRoutes)
+	settings.ExcludedRoutes = slices.Clone(settings.ExcludedRoutes)
+	seen := map[netip.Prefix]bool{}
 	for _, route := range settings.ExcludedRoutes {
-		seen[route] = true
+		prefix, err := netip.ParsePrefix(route)
+		if err == nil {
+			seen[prefix] = true
+		}
 	}
 	for _, peer := range config.Peers {
 		address, _ := netip.ParseAddrPort(peer.Endpoint)
 		host := address.Addr().Unmap()
-		route := netip.PrefixFrom(host, host.BitLen()).String()
+		route := netip.PrefixFrom(host, host.BitLen())
 		if !seen[route] {
-			settings.ExcludedRoutes = append(settings.ExcludedRoutes, route)
+			settings.ExcludedRoutes = append(settings.ExcludedRoutes, route.String())
 			seen[route] = true
 		}
 	}

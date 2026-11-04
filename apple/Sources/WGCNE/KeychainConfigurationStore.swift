@@ -2,7 +2,7 @@ import Foundation
 import LocalAuthentication
 import Security
 
-internal protocol ConfigurationStore: AnyObject {
+internal protocol ConfigurationStore: AnyObject, Sendable {
     func put(_ configuration: Data, accessGroup: String) throws -> Data
     func read(reference: Data, accessGroup: String) throws -> Data
     func delete(reference: Data, accessGroup: String) throws

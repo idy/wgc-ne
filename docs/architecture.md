@@ -1,8 +1,9 @@
 # WGC NE architecture
 
 WGC NE is an independent Flutter plugin and Apple Network Extension SDK. Its Go
-core uses `github.com/idy/wgc` v0.2.0 for authenticated WireGuard packets and
-sing-box v1.14.4 for userspace TCP/UDP, TUN flow handling, DNS, and routing.
+core pins `github.com/idy/wgc` at `v0.2.1-0.20261103184829-50549511c059` for
+authenticated WireGuard packets and uses sing-box v1.14.4 for userspace TCP/UDP,
+TUN flow handling, DNS, and routing.
 It is not an official WireGuard or sing-box application.
 
 ## Boundaries
@@ -52,8 +53,12 @@ It is not an official WireGuard or sing-box application.
 `default_peer` is the first peer, `transport` is UDP, MTU is 1280, tunnel DNS is
 `198.18.0.2`, upstream DNS is `1.1.1.1:53`, and included routes cover the address
 families in `addresses`. Numeric, unzoned endpoints and resolvers only. Peers'
-outer endpoint host routes are added to exclusions. The configured inner source
-addresses must be allowed by the remote WireGuard server.
+outer endpoint host routes are added to exclusions. An explicit empty
+`network.included_routes` list installs no included routes; only an omitted or
+null list selects the defaults. Each input route list accepts at most 1,024
+entries. Derived exclusions can contain up to 1,056 entries after adding host
+routes for the 32 supported peers. The configured inner source addresses must be
+allowed by the remote WireGuard server.
 
 Optional `sing_box` replaces the generated sing-box configuration. The supported
 built-in registrations are TUN, direct, WGC, UDP/TCP DNS, and FakeIP DNS. Exactly
@@ -61,6 +66,10 @@ one TUN inbound is required and its addresses/MTU must match the outer settings;
 auto route installation is disabled because NetworkExtension owns it. A WGC
 outbound uses `{"type":"wgc","tag":"vpn","peer":"exit","resolver":"dns-remote"}`.
 Custom sing-box configuration does not grant access to undeclared WGC peers.
+The generated TUN uses the gVisor stack, which accepts host prefixes such as
+`/32` and `/128`. A custom mixed or system stack needs a successor address inside
+the first prefix of each configured address family; offline validation rejects
+prefixes that cannot satisfy that requirement.
 
 The default policy sends TUN TCP/UDP and DNS through the selected peer. It does
 not bundle product-specific routing lists, accounts, subscriptions, or service
@@ -85,9 +94,16 @@ Validate does no networking and returns public network settings:
 `{addresses:["10.7.0.2/32"],mtu:1280,dns_servers:["198.18.0.2"],included_routes:["0.0.0.0/0"],excluded_routes:["203.0.113.10/32"]}`.
 Start ALWAYS takes ownership of `owned_fd`, including invalid JSON and all error
 paths. The provider passes a duplicate of its own utun descriptor. Start returns
-`{handle:1}` only after both the WGC session and sing-box start. Stop is idempotent.
+`{handle:1}` only after both the WGC session and sing-box start. Pending native
+startup cancels its context after 20 seconds; custom transport constructors must
+honor cancellation. Successful startup disarms that timer, so it does not limit
+the running tunnel's lifetime. Stop is idempotent.
 Status returns `{state:"running",public_key:"...",bytes_sent:0,bytes_received:0,packets_sent:0,packets_received:0,core_version:"1.14.4"}` and never configuration.
-The provider stops the core before discarding network settings.
+The provider stops the core before discarding network settings. A provider-owned
+health check observes terminal core failure without requiring host subscriptions
+and requests system tunnel teardown. Caller deadlines do not release ownership
+of an outstanding system settings mutation; its raw completion still controls
+ordered cleanup.
 
 ## Flutter/native contract
 

@@ -5,7 +5,7 @@ license terms; the project's license does not replace them.
 
 | Component | Pinned version | License / upstream |
 | --- | --- | --- |
-| WGC | v0.2.0 | MIT — https://github.com/idy/wgc |
+| WGC | v0.2.1-0.20261103184829-50549511c059 | MIT — https://github.com/idy/wgc |
 | sing-box | v1.14.4 | GPL-3.0-or-later and upstream notice — https://github.com/SagerNet/sing-box |
 | sing | v0.9.7-0.20261023115459-5dc452e537bf | GPL-3.0-or-later — https://github.com/SagerNet/sing |
 | sing-tun | v0.9.7-0.20261023115432-040db71fcd33 | GPL-3.0-or-later — https://github.com/SagerNet/sing-tun |

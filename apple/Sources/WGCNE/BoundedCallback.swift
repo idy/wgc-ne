@@ -45,9 +45,10 @@ internal final class BoundedCallback<Value>: @unchecked Sendable {
     }
 }
 
+@MainActor
 internal func boundedCallback<Value>(
     timeout: TimeInterval,
-    _ operation: (@escaping (Result<Value, Error>) -> Void) -> Void
+    _ operation: @MainActor (@escaping @Sendable (Result<Value, Error>) -> Void) -> Void
 ) async throws -> Value {
     let callback = BoundedCallback<Value>()
     return try await withTaskCancellationHandler {
@@ -62,13 +63,29 @@ internal func boundedCallback<Value>(
     }
 }
 
+@MainActor
 internal func utilityOperation<Value>(
     timeout: TimeInterval,
-    _ operation: @escaping () throws -> Value
+    onLateSuccess: (@Sendable (Value) -> Void)? = nil,
+    _ operation: @escaping @Sendable () throws -> Value
 ) async throws -> Value {
-    try await boundedCallback(timeout: timeout) { completion in
-        DispatchQueue.global(qos: .utility).async {
-            completion(Result { try operation() })
+    let callback = BoundedCallback<Value>()
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            callback.install(continuation, timeout: timeout)
+            if !callback.isResolved {
+                DispatchQueue.global(qos: .utility).async {
+                    let result = Result { try operation() }
+                    // This worker completes once. A resource it could not deliver has
+                    // never reached the caller and can be disposed here, even after
+                    // that caller's task has been cancelled.
+                    if !callback.resolve(result), case .success(let value) = result {
+                        onLateSuccess?(value)
+                    }
+                }
+            }
         }
+    } onCancel: {
+        callback.resolve(.failure(WGCNEError.cancelled))
     }
 }

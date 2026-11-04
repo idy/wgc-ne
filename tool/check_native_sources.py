@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ensure CocoaPods links share the canonical Swift SDK without copied code."""
+"""Ensure native integrations share canonical Swift sources without copied code."""
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -10,4 +10,7 @@ for platform in ('ios', 'macos'):
     for link in links:
         assert link.is_symlink(), str(link.relative_to(root)) + ': expected a source link'
         assert link.resolve() == root / 'apple/Sources/WGCNE' / link.name, 'Source link leaves the SDK'
-print('Both CocoaPods plugins share the canonical Swift SDK sources.')
+adapter = root / 'example/ios/WGCPacketTunnel/WGCCoreEngine.swift'
+assert adapter.is_symlink(), 'The example must link the canonical Go adapter'
+assert adapter.resolve(strict=True) == root / 'apple/GoAdapter/WGCCoreEngine.swift', 'The example adapter leaves the SDK'
+print('Both CocoaPods plugins and the example share canonical Swift sources.')
