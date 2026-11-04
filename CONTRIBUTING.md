@@ -38,8 +38,12 @@ See `docs/apple-integration.md` and `docs/android-integration.md` for native
 integration and `docs/transports.md` for custom-core builds. Android checks:
 
 ```bash
-./example/android/gradlew -p example/android :wgc_ne:testDebugUnitTest
+./example/android/gradlew -p example/android :wgc_ne:testDebugUnitTest :wgc_ne:lintDebug
 ```
+
+The plugin treats `NewApi` lint findings as fatal for its API 23 minimum.
+Robolectric runs against the host JDK, so passing JVM tests alone does not prove
+that Java library methods are available on the oldest supported Android SDK.
 
 ```bash
 python3 -I tool/check_android_artifacts.py --jni-libs example/android/app/src/main/jniLibs --apk example/build/app/outputs/flutter-apk/app-release.apk

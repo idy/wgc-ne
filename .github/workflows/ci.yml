@@ -68,7 +68,7 @@ jobs:
         working-directory: example
       - run: flutter build apk --release --target-platform android-arm64,android-x64
         working-directory: example
-      - run: ./example/android/gradlew -p example/android :wgc_ne:testDebugUnitTest --console=plain
+      - run: ./example/android/gradlew -p example/android :wgc_ne:testDebugUnitTest :wgc_ne:lintDebug --console=plain
       - run: python3 -I tool/check_android_artifacts.py --jni-libs example/android/app/src/main/jniLibs --apk example/build/app/outputs/flutter-apk/app-release.apk
   apple:
     runs-on: macos-15

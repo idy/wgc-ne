@@ -5,6 +5,7 @@ import java.net.InetAddress;
 import java.net.Inet6Address;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 // Subtraction preserves excluded routes on Android 6-12, which have no
@@ -112,7 +113,7 @@ final class CidrRoutes {
                         route.address.add(BigInteger.ONE.shiftLeft(bits - route.prefix))));
             }
         }
-        ranges.sort((left, right) -> left.start.compareTo(right.start));
+        Collections.sort(ranges, (left, right) -> left.start.compareTo(right.start));
         List<Range> merged = new ArrayList<>();
         for (Range range : ranges) {
             if (!merged.isEmpty()) {

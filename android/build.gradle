@@ -31,6 +31,9 @@ android {
     testOptions {
         unitTests.includeAndroidResources = true
     }
+    lint {
+        fatal 'NewApi'
+    }
 }
 
 repositories {
