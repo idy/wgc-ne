@@ -185,7 +185,7 @@ h1 { font-size: clamp(48px, 5.65vw, 78px); line-height: 1.075; font-weight: 600;
 .code-header > span { color: var(--muted); }
 .code-tools { display: flex; align-items: center; gap: 15px; flex-shrink: 0; }
 .code-tools > span { color: var(--muted); font-size: 10px; }
-.copy-button { min-width: 49px; min-height: 30px; padding: 4px 7px; border: 1px solid var(--strong-line); border-radius: 4px; background: transparent; color: var(--ink); font-size: 10px; line-height: 1.5; }
+.copy-button { min-width: 49px; min-height: 44px; padding: 4px 7px; border: 1px solid var(--strong-line); border-radius: 4px; background: transparent; color: var(--ink); font-size: 10px; line-height: 1.5; }
 .copy-button:hover { color: var(--signal); border-color: var(--signal); }
 pre { margin: 0; padding: 23px 20px 25px; overflow: auto; font-size: 11px; line-height: 1.9; tab-size: 4; scrollbar-color: var(--strong-line) var(--surface); }
 pre code { display: block; min-width: max-content; }
