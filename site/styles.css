@@ -13,8 +13,15 @@
   --code-key: #244b8e;
   --code-string: #245d58;
   --code-number: #7045a1;
-  --sans: "Manrope", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --sans: var(--idy-font);
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+/* Retain the existing local fallback after the shared typography is loaded. */
+:root:root {
+  --idy-font: Monda, Manrope, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --idy-heading: Montserrat, Manrope, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --idy-small: Lato, Manrope, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 
 :root[data-theme="dark"] {
@@ -226,6 +233,11 @@ pre code { display: block; min-width: max-content; }
 .legal-note p { max-width: 85ch; }
 .legal-note p + p { margin-top: 8px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.idy-footer .idy-home { font-family: var(--idy-heading); }
+.preview-note, .download-note, .diagram-footnote, .reference-note, .example-note, .project-note, .legal-note, .stage-meta, .stage-counter { font-family: var(--idy-small); }
+/* Keep the native selects usable in the single row when scripts are unavailable. */
+@media (max-width: 420px) { .idy-header.compact-header .idy-preferences select { width: 62px; padding-inline: 2px; } }
+@media (max-width: 360px) { .idy-header.compact-header .idy-preferences select { width: 54px; } }
 
 @media (min-width: 1440px) {
   .page-shell { max-width: 1376px; padding: 0 64px; }

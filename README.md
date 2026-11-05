@@ -177,8 +177,10 @@ translations, the interactive architecture diagram, copy feedback, and live
 release downloads. `styles.css` defines the layout and light/dark color tokens.
 
 `site/shared/` contains the common idy.dev header/footer styles, preference and
-release helpers, and the locally hosted Manrope font with its OFL license. Keep
-these files identical across the idy.dev sites. Language follows the browser and
+release helpers, and locally hosted fonts with their licenses. The compact header
+and page use Montserrat for headings, Monda for body text, Lato for notes, and Phosphor
+icons; Manrope remains a fallback. Keep shared files identical across the idy.dev
+sites. Language follows the browser and
 theme follows the system until a visitor saves a manual choice in the header.
 The public GitHub Releases API selects the latest stable release, or the newest
 published preview when no stable release exists. XCFramework and checksum links

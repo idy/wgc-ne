@@ -287,12 +287,23 @@ final class ClientTests: XCTestCase {
 
     func testConcurrentMutationsAreSerialized() async throws {
         let repository = FakeRepository()
+        repository.holdSaves = true
         let client = makeClient(repository)
-        async let first = start(client)
-        async let second = client.stop(providerBundleIdentifier: provider)
-        _ = try await (first, second)
-        let events = try XCTUnwrap(repository.savedManagers.first).events
-        XCTAssertEqual(events, ["save", "reload", "start", "stop"])
+        let first = Task { try await self.start(client) }
+        try await waitUntil { repository.createdManagers.first?.pendingSaveCount == 1 }
+        let manager = try XCTUnwrap(repository.createdManagers.first)
+        var stopInvoked = false
+        let second = Task {
+            stopInvoked = true
+            return try await client.stop(providerBundleIdentifier: provider)
+        }
+        try await waitUntil { stopInvoked }
+        try await Task.sleep(nanoseconds: 10_000_000)
+        XCTAssertEqual(repository.loadCount, 1)
+        XCTAssertEqual(manager.events, ["save"])
+        manager.finishSave()
+        _ = try await (first.value, second.value)
+        XCTAssertEqual(manager.events, ["save", "reload", "start", "stop"])
     }
 
     func testSeparateClientsSerializeFreshStartsThroughActualSaveSettlement() async throws {

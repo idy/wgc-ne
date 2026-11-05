@@ -61,6 +61,7 @@
     pageTitle: "WGC NE — Flutter 控制，原生数据通路。",
     description: "独立开发的 Flutter 插件与 Apple Network Extension SDK。sing-box 处理 IP 流量，WGC 处理 WireGuard 数据包，你的 Go 核心负责传输。",
     socialDescription: "用于 Apple PacketTunnel 扩展的 Flutter 插件与 Go SDK，由你的应用嵌入并签名。了解传输层的职责边界。",
+    starLabel: "star — 在 GitHub 为 WGC NE 点星（在新标签页打开）",
     architecture: "架构",
     transport: "传输层",
     integration: "集成",
