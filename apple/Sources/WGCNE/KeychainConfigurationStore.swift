@@ -37,12 +37,36 @@ internal final class KeychainConfigurationStore: ConfigurationStore {
     }
 
     func read(reference: Data, accessGroup: String) throws -> Data {
-        var query = try referenceQuery(reference, accessGroup: accessGroup)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        let query = try Self.readQuery(reference: reference, accessGroup: accessGroup)
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data, !data.isEmpty,
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else {
+            throw WGCNEError.keychainFailure
+        }
+        return try Self.configurationData(from: result, accessGroup: accessGroup)
+    }
+
+    internal static func readQuery(reference: Data, accessGroup: String) throws -> [String: Any] {
+        guard !reference.isEmpty, reference.count <= 4096,
+              WGCContract.validIdentifier(accessGroup) else { throw WGCNEError.invalidProfile }
+        // Keep persistent-reference lookup separate from ownership checks on the returned attributes.
+        var query: [String: Any] = [
+            kSecValuePersistentRef as String: reference,
+            kSecReturnData as String: true,
+            kSecReturnAttributes as String: true,
+            kSecUseAuthenticationContext as String: noninteractiveContext()
+        ]
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
+        return query
+    }
+
+    internal static func configurationData(from result: CFTypeRef?, accessGroup: String) throws -> Data {
+        guard let attributes = result as? [String: Any],
+              attributes[kSecAttrService as String] as? String == WGCContract.keychainService,
+              attributes[kSecAttrAccessGroup as String] as? String == accessGroup,
+              attributes[kSecAttrSynchronizable as String] as? Bool != true,
+              let data = attributes[kSecValueData as String] as? Data, !data.isEmpty,
               data.count <= WGCContract.maximumJSONBytes else { throw WGCNEError.keychainFailure }
         return data
     }
