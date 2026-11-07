@@ -1,8 +1,10 @@
 # WGC NE Go core
 
 Module `github.com/idy/wgc-ne/core` combines WGC
-`v0.2.1-0.20261103184829-50549511c059` with sing-box v1.14.4. The WGC pseudo-version
-pins upstream commit `50549511c059` before its next tagged release.
+`v0.2.1-0.20261107180014-c3ca5bb852e4` with sing-box v1.14.4. The WGC pseudo-version
+pins upstream commit `c3ca5bb852e4` before its next tagged release. WGC uses a
+standard Go buffer pool and no longer depends on the original gVisor module;
+sing-box still uses its SagerNet gVisor TCP/IP stack.
 Build and test with `-tags with_gvisor` using Go 1.26+.
 
 `NewSession` provides userspace `DialPeer` TCP/UDP connections without an OS TUN.

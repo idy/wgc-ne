@@ -16,7 +16,7 @@ import subprocess
 import uuid
 
 
-DEFAULT_SDK_VERSION = '0.2.1'
+DEFAULT_SDK_VERSION = '0.2.2'
 
 
 def new_id():

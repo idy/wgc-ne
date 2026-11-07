@@ -1,5 +1,20 @@
 # Validation
 
+## Version 0.2.2
+
+The SDK pins WGC `v0.2.1-0.20261107180014-c3ca5bb852e4`. The original
+`gvisor.dev/gvisor` and WireGuard module requirements are gone; the SagerNet
+gVisor stack used by sing-box remains. Public SDK APIs and the native ABI are
+unchanged.
+
+Local checks on November 8, 2026, on Apple silicon: Go 1.26.0 full race tests
+and vet with `with_gvisor`, Flutter analysis and 36 Flutter tests, 67 Swift
+tests, 23 Python tool tests, canonical native source checks, module verification,
+and CocoaPods version/checksum validation passed. The iOS arm64 core with the
+example counting transport built successfully; its build metadata reports the
+new WGC revision and ABI version 1. These checks do not establish signed-device
+VPN behavior.
+
 ## Version 0.2.0
 
 Local verification on November 4, 2026, on Apple silicon with Go 1.27.3,
@@ -54,7 +69,7 @@ keys, loopback UDP, and userspace IP stacks without modifying host routes.
 The interoperability server uses the unmodified WireGuard protocol implementation
 in the pinned SagerNet wireguard-go dependency, not a second WGC instance.
 
-The core pins WGC `v0.2.1-0.20261103184829-50549511c059`, which includes upstream
+Version 0.2.0 pinned WGC `v0.2.1-0.20261103184829-50549511c059`, which included upstream
 handshake, session, queue, and statistics synchronization fixes. Optional WGC peer
 statistics remain disabled to avoid duplicate accounting; SDK counters use
 independent atomic totals at the selected transport boundary.
