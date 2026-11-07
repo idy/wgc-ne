@@ -29,7 +29,7 @@ dart run wgc_ne:setup_ios --project ios/Runner.xcodeproj --core build/WGCCore.xc
 
 It preserves a backup and refuses an existing target/provider folder. It does not
 choose a development team, register identifiers, or sign an application. By
-default it references the WGCNE Swift package at version 0.2.0; `--sdk` selects a
+default it references the WGCNE Swift package at version 0.2.1; `--sdk` selects a
 local checkout during development. Inspect the generated project changes and
 finish provisioning in Xcode. The helper requires Python 3.9+, `plutil`, and
 Xcode's `xcodebuild`. It reads Runner's effective settings for every configuration,

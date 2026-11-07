@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- Fix Apple Keychain configuration reads that fail with `errSecParam` when a
+  persistent reference is combined with item-attribute filters on iOS.
+- Preserve service/access-group ownership, synchronization, and payload-size
+  validation by checking attributes returned with the configuration data.
+- Pin generated iOS PacketTunnel targets to Swift SDK 0.2.1 so the default
+  integration includes the Keychain fix.
+
 ## 0.2.0
 
 - Android API 23+ support through an app-owned foreground `VpnService`, JNI,

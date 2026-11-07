@@ -81,11 +81,13 @@ class ConfigureIOSTests(unittest.TestCase):
         return {path.relative_to(self.root): path.read_bytes()
                 for path in self.root.rglob('*') if path.is_file()}
 
-    def run_setup(self, *options, resolver=None):
+    def run_setup(self, *options, resolver=None, local_sdk=True):
         arguments = [
             'configure_ios.py', '--project', str(self.project), '--core', str(self.core),
-            '--sdk', str(Path(__file__).resolve().parents[1]), *options,
         ]
+        if local_sdk:
+            arguments.extend(['--sdk', str(Path(__file__).resolve().parents[1])])
+        arguments.extend(options)
         resolve = resolver or (lambda project, configuration: self.effective[configuration])
         with mock.patch.object(sys, 'argv', arguments), \
                 mock.patch.object(configure_ios, 'load_build_settings', side_effect=resolve), \
@@ -136,6 +138,34 @@ class ConfigureIOSTests(unittest.TestCase):
         for reference in configurations:
             self.assertEqual(objects[reference]['buildSettings']['DEVELOPMENT_TEAM'], 'EXISTINGTEAM')
         self.assert_merged('Runner/Runner.entitlements')
+
+    def test_default_remote_sdk_matches_plugin_version_and_links_to_extension(self):
+        self.run_setup(local_sdk=False)
+        data = self.generated_project()
+        objects = data['objects']
+        package_references = objects[data['rootObject']]['packageReferences']
+        self.assertEqual(len(package_references), 1)
+        package_reference = package_references[0]
+        package = objects[package_reference]
+        self.assertEqual(package['isa'], 'XCRemoteSwiftPackageReference')
+        self.assertEqual(package['repositoryURL'], 'https://github.com/idy/wgc-ne.git')
+        pubspec = Path(__file__).resolve().parents[1] / 'pubspec.yaml'
+        version = next(line.split(':', 1)[1].strip() for line in pubspec.read_text().splitlines()
+                       if line.startswith('version:'))
+        self.assertEqual(package['requirement'], {'kind': 'exactVersion', 'version': version})
+        self.assertFalse(any(value.get('isa') == 'XCLocalSwiftPackageReference'
+                             for value in objects.values()))
+        target = next(value for value in objects.values()
+                      if value.get('isa') == 'PBXNativeTarget' and value.get('name') == 'WGCPacketTunnel')
+        products = target['packageProductDependencies']
+        self.assertEqual(len(products), 1)
+        product = objects[products[0]]
+        self.assertEqual(product['productName'], 'WGCNE')
+        self.assertEqual(product['package'], package_reference)
+        frameworks = next(objects[reference] for reference in target['buildPhases']
+                          if objects[reference]['isa'] == 'PBXFrameworksBuildPhase')
+        self.assertTrue(any(objects[reference].get('productRef') == products[0]
+                            for reference in frameworks['files']))
 
     def test_explicit_provider_must_belong_to_every_configuration(self):
         self.effective['Debug']['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.example.app.debug'
