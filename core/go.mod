@@ -3,7 +3,7 @@ module github.com/idy/wgc-ne/core
 go 1.26.0
 
 require (
-	github.com/idy/wgc v0.2.1-0.20261103184829-50549511c059
+	github.com/idy/wgc v0.2.1-0.20261107180014-c3ca5bb852e4
 	github.com/sagernet/gvisor v0.0.0-20260727.0-sing-box-mod.1
 	github.com/sagernet/sing v0.9.7-0.20261023115459-5dc452e537bf
 	github.com/sagernet/sing-box v1.14.4
@@ -67,6 +67,4 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
-	golang.zx2c4.com/wireguard v0.0.0-20230704135630-469159ecf7d1 // indirect
-	gvisor.dev/gvisor v0.0.0-20240306221502-ee1e1f6070e3 // indirect
 )

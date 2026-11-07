@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2
+
+- Pin the Go core and transport example to WGC commit `c3ca5bb852e4`, which
+  replaces its inherited gVisor buffer dependency with a standard Go pool.
+- Remove the unused original gVisor and WireGuard module dependencies while
+  retaining sing-box's SagerNet gVisor TCP/IP stack.
+- Keep the Flutter, Android, CocoaPods, and generated Swift SDK references aligned
+  at 0.2.2. WireGuard message limits and the native ABI are unchanged.
+
 ## 0.2.1
 
 - Fix Apple Keychain configuration reads that fail with `errSecParam` when a

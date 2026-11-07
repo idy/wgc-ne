@@ -5,7 +5,7 @@ license terms; the project's license does not replace them.
 
 | Component | Pinned version | License / upstream |
 | --- | --- | --- |
-| WGC | v0.2.1-0.20261103184829-50549511c059 | MIT — https://github.com/idy/wgc |
+| WGC | v0.2.1-0.20261107180014-c3ca5bb852e4 | MIT — https://github.com/idy/wgc |
 | sing-box | v1.14.4 | GPL-3.0-or-later and upstream notice — https://github.com/SagerNet/sing-box |
 | sing | v0.9.7-0.20261023115459-5dc452e537bf | GPL-3.0-or-later — https://github.com/SagerNet/sing |
 | sing-tun | v0.9.7-0.20261023115432-040db71fcd33 | GPL-3.0-or-later — https://github.com/SagerNet/sing-tun |
@@ -18,9 +18,11 @@ Collected license and notice files are preserved under `third_party/licenses/`.
 They include the short upstream GPL notices that automated classifiers could not
 identify; those notices were checked against their original pinned modules.
 The complete core dependency graph and cryptographic checksums are recorded in
-`core/go.mod` and `core/go.sum`. The WGC dependency includes WireGuard Go and
-selected gVisor utilities. sing-box's userspace network stack uses its gVisor
-fork. Dart dependencies are declared in `pubspec.yaml` and retain their licenses.
+`core/go.mod` and `core/go.sum`. WGC retains the MIT-licensed WireGuard replay
+filter locally and uses a standard Go buffer pool, without the original
+`gvisor.dev/gvisor` dependency. sing-box's userspace network stack still uses
+`github.com/sagernet/gvisor`. Dart dependencies are declared in `pubspec.yaml`
+and retain their licenses.
 
 Custom transports remain the consuming application's responsibility. Building
 an extension into the native core does not make its license disappear. Review

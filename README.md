@@ -53,7 +53,7 @@ dependencies:
   wgc_ne:
     git:
       url: https://github.com/idy/wgc-ne.git
-      ref: v0.2.1
+      ref: v0.2.2
 ```
 
 For Android, build with Go 1.26+ and NDK r28+ on macOS or Linux:
