@@ -1,4 +1,31 @@
-# WGC NE
+# WGC NE (deprecated)
+
+> [!WARNING]
+> This project is deprecated and archived. For ongoing Flutter WGC development,
+> use [sing_box_flutter on pub.dev](https://pub.dev/packages/sing_box_flutter)
+> and the [sing-box-flutter repository](https://github.com/idy/sing-box-flutter).
+
+## Use sing_box_flutter instead
+
+WGC support is available in `sing_box_flutter` **0.2.0 and later**, alongside
+sing-box, WireGuard, and Tailscale in the same native VPN runtime.
+
+```bash
+flutter pub add sing_box_flutter
+```
+
+Install its prebuilt native libraries using the
+[new setup instructions](https://github.com/idy/sing-box-flutter#readme), then
+follow the [WGC configuration guide](https://github.com/idy/sing-box-flutter/blob/main/doc/wgc.md).
+The replacement uses sing-box JSON and a different Dart API; it is not a drop-in
+replacement for `WgcNe` or `WgcConfiguration`. It supports Android API 24+ and
+iOS 15+; legacy macOS and standalone Apple SDK integrations are not covered.
+
+Existing `wireguard_conn_flutter` 0.2.2 installations and historical releases
+remain available. The documentation below describes the retired SDK and is
+retained for existing integrations.
+
+## Archived project documentation
 
 A Flutter plugin and native Android/Apple SDK for applications that want
 WireGuard sessions with an application-owned transport. The Flutter plugin
